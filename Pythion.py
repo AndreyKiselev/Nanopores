@@ -395,7 +395,7 @@ class GUIForm(QtGui.QMainWindow):
                 uf.PlotSingle(self)
 
     def getfile(self):
-        datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat)")
+        datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat *.mat)")
         if not datafilenametemp[0]=='':
             self.datafilename=datafilenametemp[0]
             self.direc=os.path.dirname(self.datafilename)
