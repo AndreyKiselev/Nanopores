@@ -1029,12 +1029,10 @@ class GUIForm(QtGui.QMainWindow):
         print(self.ui.porelengthValue.value())
         print(valuetoupdate)
         print(self.ui.concentrationValue.value())
-        if self.ui.concentrationValue.value() == 0:
-            pass
-        else:
+        if self.ui.concentrationValue.value():
             size=uf.CalculatePoreSize(valuetoupdate, self.ui.porelengthValue.value(), self.ui.concentrationValue.value())
             self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=5, suffix='m', space=True, error=None, minVal=1e-25, allowUnicode=True))
-
+        
     def customCond(self):
         if self.ui.groupBox_5.isChecked():
             self.useCustomConductance = 1
