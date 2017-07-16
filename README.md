@@ -13,3 +13,5 @@ Pythion.py Load() Line 227 No sense of the colors = np.array(self.sdf.color)for 
 outputsamplerate = np.float64(self.ui.outputsamplerateentry.text())*1000 #use integer multiples of 4166.67 ie 2083.33 or 1041.67 need to create multiple (triple) choice. what can be choosen?
 
 Pythion.py getfile() Line 398 QtGui.QFileDialog.getOpenFileName( filter="Amplifier Files( *.mat)") mat file execution added
+
+Usefulfunctions Plotsingle() Line 647 bins=int(expr)
