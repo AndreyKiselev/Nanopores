@@ -15,3 +15,4 @@ outputsamplerate = np.float64(self.ui.outputsamplerateentry.text())*1000 #use in
 Pythion.py getfile() Line 398 QtGui.QFileDialog.getOpenFileName( filter="Amplifier Files( *.mat)") mat file execution added
 
 Usefulfunctions Plotsingle() Line 647 bins=int(expr) deleted line 648 aphx = aphx no sense
+Usefulfunctions MakePSD() Line 414 we should be very carefull with log mode: fig.setLogMode(x=True, y=True) x and y are expressed in units this must be normalized
