@@ -14,4 +14,4 @@ outputsamplerate = np.float64(self.ui.outputsamplerateentry.text())*1000 #use in
 
 Pythion.py getfile() Line 398 QtGui.QFileDialog.getOpenFileName( filter="Amplifier Files( *.mat)") mat file execution added
 
-Usefulfunctions Plotsingle() Line 647 bins=int(expr)
+Usefulfunctions Plotsingle() Line 647 bins=int(expr) deleted line 648 aphx = aphx no sense
