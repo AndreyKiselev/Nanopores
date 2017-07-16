@@ -645,7 +645,6 @@ def PlotSingle(self):
     self.voltagepl.setLabel('bottom', text='Time', units='s')
     self.p1.plot(self.t, temp_i, pen='b')
     aphy, aphx = np.histogram(temp_i, bins=int(np.round(len(temp_i) / 1000)))
-    aphx = aphx
 
     aphhist = pg.PlotCurveItem(aphx, aphy, stepMode=True, fillLevel=0, brush='b')
     self.p3.addItem(aphhist)
