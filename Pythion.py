@@ -262,7 +262,7 @@ class GUIForm(QtGui.QMainWindow):
                 s=timer()
                 ds_factor = int(self.out['samplerate']/(self.LPfiltercutoff*5))
                 if ds_factor>1:
-                    ds_sig = scipy.signal.resample(self.out['i1raw'], len(self.out['i1raw'])/ds_factor)
+                    ds_sig = scipy.signal.resample(self.out['i1raw'], int(len(self.out['i1raw'])/ds_factor))
                     Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']/ds_factor), 4)  # [0,1] nyquist frequency
                     b, a = signal.bessel(4, Wn, btype='low', analog=False)
                     self.out['i1'] = signal.filtfilt(b, a, ds_sig)
