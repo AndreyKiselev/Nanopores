@@ -22,3 +22,5 @@ Pythion.py Load() Line 265 ds_sig = scipy.signal.resample(... int(expr)) integer
 UsefulFunctions.py Lines 852 853 855 deli[i] = (...   int(startpoints[i]+1):int(endpoints[i]-1)])) integer type specification 
 
 Pythion.py Baselinecalc() Line 564  if .dat file is downloaded no file processing (should be especially described to protect from bugs)
+
+UsefulFunctions.py Lines 467 added: self.p1.clear() on order to avoid debug: If we load to channel data (.dat) and make show Channel 2 and then Plot Both. The old graph was not removed. 
