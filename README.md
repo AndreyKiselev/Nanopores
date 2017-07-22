@@ -20,3 +20,5 @@ Usefulfunctions MakePSD() Line 414 we should be very carefull with log mode: fig
 Pythion.py Load() Line 265 ds_sig = scipy.signal.resample(... int(expr)) integer specified
 
 UsefulFunctions.py Lines 852 853 855 deli[i] = (...   int(startpoints[i]+1):int(endpoints[i]-1)])) integer type specification 
+
+Pythion.py Baselinecalc() Line 564  if .dat file is downloaded no file processing (should be especially described to protect from bugs)
