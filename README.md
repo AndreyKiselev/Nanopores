@@ -19,4 +19,4 @@ Usefulfunctions MakePSD() Line 414 we should be very carefull with log mode: fig
 
 Pythion.py Load() Line 265 ds_sig = scipy.signal.resample(... int(expr)) integer specified
 
-UsefulFunctions.py deli[i]
+UsefulFunctions.py Lines 852 853 855 deli[i] = (...   int(startpoints[i]+1):int(endpoints[i]-1)])) integer type specification 
