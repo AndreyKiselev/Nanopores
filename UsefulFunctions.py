@@ -464,6 +464,7 @@ def SaveFigureList(folder, list):
     return 0
 
 def DoublePlot(self):
+    self.p1.clear()
     p1 = self.p1.plotItem
     p1_v = self.voltagepl.plotItem
     p1.getAxis('left').setLabel(text='Ionic Current', color='#0000FF', units='A')
