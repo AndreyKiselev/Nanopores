@@ -849,10 +849,10 @@ def AddInfoAfterRecursive(self):
         length = endpoints[i] - startpoints[i]
         if length <= limit and length>3:
             # Impulsion Fit to minimal value
-            deli[i] = localBaseline[i] - np.min(self.out[self.sig][startpoints[i]+1:endpoints[i]-1])
+            deli[i] = localBaseline[i] - np.min(self.out[self.sig][int(startpoints[i]+1):int(endpoints[i]-1)])
             dwell[i] = (endpoints[i] - startpoints[i]) / self.out['samplerate']
         elif length > limit:
-            deli[i] = localBaseline[i] - np.mean(self.out[self.sig][startpoints[i]+5:endpoints[i]-5])
+            deli[i] = localBaseline[i] - np.mean(self.out[self.sig][int(startpoints[i]+5):int(endpoints[i]-5)])
             dwell[i] = (endpoints[i] - startpoints[i]) / self.out['samplerate']
             # # Cusum Fit
             # sigma = np.sqrt(localVariance[i])
