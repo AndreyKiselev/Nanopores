@@ -18,3 +18,5 @@ Usefulfunctions Plotsingle() Line 647 bins=int(expr) deleted line 648 aphx = aph
 Usefulfunctions MakePSD() Line 414 we should be very carefull with log mode: fig.setLogMode(x=True, y=True) x and y are expressed in units this must be normalized
 
 Pythion.py Load() Line 265 ds_sig = scipy.signal.resample(... int(expr)) integer specified
+
+UsefulFunctions.py deli[i]
