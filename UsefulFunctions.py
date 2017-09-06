@@ -4,7 +4,7 @@ import numpy as np
 import scipy
 import scipy.signal as sig
 import os
-import pickle as pkl  
+import pickle as pkl
 from scipy import io
 from scipy import signal
 from PyQt5 import QtGui, QtWidgets
@@ -18,32 +18,6 @@ from timeit import default_timer as timer
 import platform
 from scipy.optimize import curve_fit
 
-def Reshape1DTo2D(inputarray, buffersize):
-    npieces = np.uint16(len(inputarray)/buffersize)
-    voltages = np.array([], dtype=np.float64)
-    currents = np.array([], dtype=np.float64)
-    #print(npieces)
-
-    for i in range(1, npieces+1):
-        if i % 2 == 1:
-            currents = np.append(currents, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
-            #print('Length Currents: {}'.format(len(currents)))
-        else:
-            voltages = np.append(voltages, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
-            #print('Length Voltages: {}'.format(len(voltages)))
-
-    v1 = np.ones((len(voltages)), dtype=np.float64)
-    i1 = np.ones((len(currents)), dtype=np.float64)
-    v1[:]=voltages
-    i1[:]=currents
-
-    out = {'v1': v1, 'i1': i1}
-    print('Currents:' + str(v1.shape))
-    print('Voltages:' + str(i1.shape))
-    return out
-
-def CalculatePoreSize(G, L, s):
-    return (G+np.sqrt(G*(G+16*L*s/np.pi)))/(2*s)
 
 def ImportAxopatchData(datafilename):
     x=np.fromfile(datafilename, np.dtype('>f4'))
@@ -79,9 +53,10 @@ def ImportAxopatchData(datafilename):
 
 def ImportChimeraRaw(datafilename):
     matfile=io.loadmat(str(os.path.splitext(datafilename)[0]))
-    #buffersize=matfile['DisplayBuffer']
-    data = np.fromfile(datafilename, np.dtype('<u2'))
     samplerate = np.float64(matfile['ADCSAMPLERATE'])
+    data = np.fromfile(datafilename, np.dtype('<u2'))
+    #buffersize=matfile['DisplayBuffer']
+    
     TIAgain = np.int32(matfile['SETUP_TIAgain'])
     preADCgain = np.float64(matfile['SETUP_preADCgain'])
     currentoffset = np.float64(matfile['SETUP_pAoffset'])
@@ -107,6 +82,244 @@ def ImportChimeraData(datafilename):
     else:
         output = ImportChimeraRaw(datafilename)
     return output
+
+
+def CutDataIntoVoltageSegments(output):
+    sweepedChannel = ''
+    if output['type'] == 'ChimeraNotRaw' or (output['type'] == 'Axopatch' and not output['graphene']):
+        ChangePoints = np.where(np.diff(output['v1']))[0]
+        sweepedChannel = 'v1'
+        if len(ChangePoints) is 0:
+            print('No voltage sweeps in this file')
+            return (0,0)
+    elif (output['type'] == 'Axopatch' and output['graphene']):
+        ChangePoints = np.where(np.diff(output['v1']))[0]
+        sweepedChannel = 'v1'
+        if len(ChangePoints) is 0:
+            ChangePoints = np.where(np.diff(output['v2']))[0]
+            if len(ChangePoints) is 0:
+                print('No voltage sweeps in this file')
+                return (0,0)
+            else:
+                sweepedChannel = 'v2'
+    print('Cutting into Segments...\n{} change points detected in channel {}...'.format(len(ChangePoints), sweepedChannel))
+    return (ChangePoints, sweepedChannel)
+
+def ExpFunc(x, a, b, c):
+    return a * np.exp(-b * x) + c
+
+def MakeExponentialFit(xdata,ydata):
+    try:
+        popt, pcov = curve_fit(ExpFunc, xdata, ydata)
+        return (popt, pcov)
+    except RuntimeError:
+        popt = (0,0,0)
+        pcov = 0
+        return (popt, pcov)
+
+def YorkFit(X, Y, sigma_X, sigma_Y, r=0):
+    N_itermax=10 #maximum number of interations
+    tol=1e-15 #relative tolerance to stop at
+    N = len(X)
+    temp = np.matrix([X, np.ones(N)])
+    #make initial guess at b using linear squares
+
+    tmp = np.matrix(Y)*lin.pinv(temp)
+    b_lse = np.array(tmp)[0][0]
+    #a_lse=tmp(2);
+    b = b_lse #initial guess
+    omega_X = np.true_divide(1,np.power(sigma_X,2))
+    omega_Y = np.true_divide(1, np.power(sigma_Y,2))
+    alpha=np.sqrt(omega_X*omega_Y)
+    b_save = np.zeros(N_itermax+1) #vector to save b iterations in
+    b_save[0]=b
+
+    for i in np.arange(N_itermax):
+        W=omega_X*omega_Y/(omega_X+b*b*omega_Y-2*b*r*alpha)
+
+        X_bar=np.sum(W*X)/np.sum(W)
+        Y_bar=np.sum(W*Y)/np.sum(W)
+
+        U=X-X_bar
+        V=Y-Y_bar
+
+        beta=W*(U/omega_Y+b*V/omega_X-(b*U+V)*r/alpha)
+
+        b=sum(W*beta*V)/sum(W*beta*U)
+        b_save[i+1]=b
+        if np.abs((b_save[i+1]-b_save[i])/b_save[i+1]) < tol:
+            break
+
+    a=Y_bar-b*X_bar
+    x=X_bar+beta
+    y=Y_bar+b*beta
+    x_bar=sum(W*x)/sum(W)
+    y_bar=sum(W*y)/sum(W)
+    u=x-x_bar
+    #%v=y-y_bar
+    sigma_b=np.sqrt(1/sum(W*u*u))
+    sigma_a=np.sqrt(1./sum(W)+x_bar*x_bar*sigma_b*sigma_b)
+    return (a, b, sigma_a, sigma_b, b_save)
+
+def MakeIV(output, ChangePoints, sweepedChannel):
+    approach = 'mean'
+    delay = 0.7
+    if ChangePoints is 0:
+        return 0
+
+    if output['graphene']:
+        currents = ['i1', 'i2']
+    else:
+        currents = ['i1']
+
+    Values = output[sweepedChannel][ChangePoints]
+    Values = np.append(Values, output[sweepedChannel][-1])
+    delayinpoints = np.int64(delay * output['samplerate'])
+    #   Store All Data
+    All={}
+    for current in currents:
+        Item = {}
+        l = len(Values)
+        Item['Voltage'] = np.zeros(l)
+        Item['StartPoint'] = np.zeros(l,dtype=np.uint64)
+        Item['EndPoint'] = np.zeros(l, dtype=np.uint64)
+        Item['Mean'] = np.zeros(l)
+        Item['STD'] = np.zeros(l)
+        Item['SweepedChannel'] = sweepedChannel
+        Item['YorkFitValues'] = {}
+        Item['ExponentialFitValues'] = np.zeros((3, l))
+        Item['ExponentialFitSTD'] = np.zeros((3, l))
+        # First item
+        Item['Voltage'][0] = Values[0]
+        trace = output[current][0 + delayinpoints:ChangePoints[0]]
+        trace = trace[np.array(1-np.isnan(trace), dtype = bool)]
+        Item['StartPoint'][0] = 0 + delayinpoints
+        Item['EndPoint'][0] = ChangePoints[0]
+        Item['Mean'][0] = np.mean(trace)
+        Item['STD'][0] = np.std(trace)
+        (popt, pcov) = MakeExponentialFit(np.arange(len(trace))/output['samplerate'], trace)
+        if popt[0]:
+            Item['ExponentialFitValues'][:, 0] = popt
+            Item['ExponentialFitSTD'][:, 0] = np.sqrt(np.diag(pcov))
+        else:
+            print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][0]))
+            Item['ExponentialFitValues'][:, 0] = np.mean(trace)
+            Item['ExponentialFitSTD'][:, 0] = np.std(trace)
+
+        for i in range(1, len(Values) - 1):
+            trace = output[current][ChangePoints[i - 1]+delayinpoints:ChangePoints[i]]
+            Item['Voltage'][i] = Values[i]
+            Item['StartPoint'][i] = ChangePoints[i - 1]+delayinpoints
+            Item['EndPoint'][i] = ChangePoints[i]
+            Item['Mean'][i] = np.mean(trace)
+            Item['STD'][i] = np.std(trace)
+            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
+            if popt[0]:
+                Item['ExponentialFitValues'][:, i] = popt
+                Item['ExponentialFitSTD'][:, i] = np.sqrt(np.diag(pcov))
+            else:
+                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][i]))
+                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
+                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
+
+        # Last
+        if 1:
+            trace = output[current][ChangePoints[len(ChangePoints) - 1] + delayinpoints : len(output[current]) - 1]
+            Item['Voltage'][-1:] = Values[len(Values) - 1]
+            Item['StartPoint'][-1:] = ChangePoints[len(ChangePoints) - 1]+delayinpoints
+            Item['EndPoint'][-1:] = len(output[current]) - 1
+            Item['Mean'][-1:] = np.mean(trace)
+            Item['STD'][-1:] = np.std(trace)
+            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
+            if popt[0]:
+                Item['ExponentialFitValues'][:, -1] = popt
+                Item['ExponentialFitSTD'][:, -1] = np.sqrt(np.diag(pcov))
+            else:
+                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][-1:]))
+                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
+                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
+
+        sigma_v = 1e-12 * np.ones(len(Item['Voltage']))
+        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['Mean'], sigma_v, Item['STD'])
+        x_fit = np.linspace(min(Item['Voltage']), max(Item['Voltage']), 1000)
+        y_fit = scipy.polyval([b, a], x_fit)
+        Item['YorkFitValues'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
+                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
+        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['ExponentialFitValues'][2,:], sigma_v, Item['ExponentialFitSTD'][2,:])
+        y_fit = scipy.polyval([b, a], x_fit)
+        Item['YorkFitValuesExponential'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
+                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
+        All[current] = Item
+        All['Currents'] = currents
+    return All
+
+def FitIV(IVData, x='i1', y='v1', iv=0):
+    plot = 1
+    sigma_v = 1e-12*np.ones(len(['Voltage']))
+    (a, b, sigma_a, sigma_b, b_save) = YorkFit(IVData['Voltage'], IVData['Mean'], sigma_v, IVData['STD'])
+    x_fit = np.linspace(min(IVData['Voltage']), max(IVData['Voltage']), 1000)
+    y_fit = scipy.polyval([b,a], x_fit)
+    if plot:
+        spacing = np.sort(IVData['Voltage'])
+        #iv = pg.PlotWidget(title='Current-Voltage Plot', background=None)
+        err = pg.ErrorBarItem(x=IVData['Voltage'], y=IVData['Mean'], top=IVData['STD'],
+                              bottom=IVData['STD'], pen='b', beam=((spacing[1]-spacing[0]))/2)
+        iv.addItem(err)
+        iv.plot(IVData['Voltage'], IVData['Mean'], symbol='o', pen=None)
+        iv.setLabel('left', text=x + ', Current', units='A')
+        iv.setLabel('bottom', text=y + ', Voltage', units='V')
+        iv.plot(x_fit, y_fit, pen='r')
+        textval = pg.siFormat(1/b, precision=5, suffix='Ohm', space=True, error=None, minVal=1e-25, allowUnicode=True)
+        textit = pg.TextItem(text=textval, color=(0, 0, 0))
+        textit.setPos(min(IVData['Voltage']), max(IVData['Mean']))
+        iv.addItem(textit)
+
+    else:
+        iv=0
+    YorkFitValues={'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept':a, 'Slope':b, 'Sigma_Yintercept':sigma_a, 'Sigma_Slope':sigma_b, 'Parameter':b_save}
+    return (YorkFitValues, iv)
+
+
+
+def PlotIV(output, AllData, current = 'i1', unit=1e9, axis = '', WithFit = 1):
+    axis.errorbar(AllData[current]['Voltage'], AllData[current]['Mean']*unit, yerr=AllData[current]['STD']*unit, fmt='o', label=str(os.path.split(output['filename'])[1])[:-4])
+    axis.set_ylabel('Current ' + current + ' [nA]')
+    axis.set_xlabel('Voltage ' + AllData[current]['SweepedChannel'] +' [V]')
+    if WithFit:
+        axis.set_title('IV Plot with Fit: G={:.2f}nS'.format(AllData[current]['YorkFitValues']['Slope']*unit))
+        axis.plot(AllData[current]['YorkFitValues']['x_fit'], AllData[current]['YorkFitValues']['y_fit']*unit, 'r--', label='Linear Fit')
+    else:
+        axis.set_title('IV Plot')
+    return axis
+
+
+
+def Reshape1DTo2D(inputarray, buffersize):
+    npieces = np.uint16(len(inputarray)/buffersize)
+    voltages = np.array([], dtype=np.float64)
+    currents = np.array([], dtype=np.float64)
+    #print(npieces)
+
+    for i in range(1, npieces+1):
+        if i % 2 == 1:
+            currents = np.append(currents, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
+            #print('Length Currents: {}'.format(len(currents)))
+        else:
+            voltages = np.append(voltages, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
+            #print('Length Voltages: {}'.format(len(voltages)))
+
+    v1 = np.ones((len(voltages)), dtype=np.float64)
+    i1 = np.ones((len(currents)), dtype=np.float64)
+    v1[:]=voltages
+    i1[:]=currents
+
+    out = {'v1': v1, 'i1': i1}
+    print('Currents:' + str(v1.shape))
+    print('Voltages:' + str(i1.shape))
+    return out
+
+def CalculatePoreSize(G, L, s):
+    return (G+np.sqrt(G*(G+16*L*s/np.pi)))/(2*s)
 
 def OpenFile(filename = ''):
     if filename == '':
@@ -216,117 +429,8 @@ def PlotData(output):
         fig_handles = {'Fig1': 0, 'Fig2': figure2, 'Zoom1': 0, 'Zoom2': f2}
         return fig_handles
 
-def CutDataIntoVoltageSegments(output):
-    sweepedChannel = ''
-    if output['type'] == 'ChimeraNotRaw' or (output['type'] == 'Axopatch' and not output['graphene']):
-        ChangePoints = np.where(np.diff(output['v1']))[0]
-        sweepedChannel = 'v1'
-        if len(ChangePoints) is 0:
-            print('No voltage sweeps in this file')
-            return (0,0)
-    elif (output['type'] == 'Axopatch' and output['graphene']):
-        ChangePoints = np.where(np.diff(output['v1']))[0]
-        sweepedChannel = 'v1'
-        if len(ChangePoints) is 0:
-            ChangePoints = np.where(np.diff(output['v2']))[0]
-            if len(ChangePoints) is 0:
-                print('No voltage sweeps in this file')
-                return (0,0)
-            else:
-                sweepedChannel = 'v2'
-    print('Cutting into Segments...\n{} change points detected in channel {}...'.format(len(ChangePoints), sweepedChannel))
-    return (ChangePoints, sweepedChannel)
 
-def MakeIVData(output, approach = 'mean', delay = 0.7):
-    (ChangePoints, sweepedChannel) = CutDataIntoVoltageSegments(output)
-    if ChangePoints is 0:
-        return 0
 
-    if output['graphene']:
-        currents = ['i1', 'i2']
-    else:
-        currents = ['i1']
-
-    Values = output[sweepedChannel][ChangePoints]
-    Values = np.append(Values, output[sweepedChannel][::-1][0])
-    delayinpoints = np.int64(delay * output['samplerate'])
-    #   Store All Data
-    All={}
-    for current in currents:
-        Item = {}
-        l = len(Values)
-        Item['Voltage'] = np.zeros(l)
-        Item['StartPoint'] = np.zeros(l,dtype=np.uint64)
-        Item['EndPoint'] = np.zeros(l, dtype=np.uint64)
-        Item['Mean'] = np.zeros(l)
-        Item['STD'] = np.zeros(l)
-        Item['SweepedChannel'] = sweepedChannel
-        Item['YorkFitValues'] = {}
-        Item['ExponentialFitValues'] = np.zeros((3, l))
-        Item['ExponentialFitSTD'] = np.zeros((3, l))
-        # First item
-        Item['Voltage'][0] = Values[0]
-        trace = output[current][0 + delayinpoints:ChangePoints[0]]
-        trace = trace[1-np.isnan(trace)]
-        Item['StartPoint'][0] = 0 + delayinpoints
-        Item['EndPoint'][0] = ChangePoints[0]
-        Item['Mean'][0] = np.mean(trace)
-        Item['STD'][0] = np.std(trace)
-        (popt, pcov) = MakeExponentialFit(np.arange(len(trace))/output['samplerate'], trace)
-        if popt[0]:
-            Item['ExponentialFitValues'][:, 0] = popt
-            Item['ExponentialFitSTD'][:, 0] = np.sqrt(np.diag(pcov))
-        else:
-            print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][0]))
-            Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-            Item['ExponentialFitSTD'][:, 0] = np.std(trace)
-
-        for i in range(1, len(Values) - 1):
-            trace = output[current][ChangePoints[i - 1]+delayinpoints:ChangePoints[i]]
-            Item['Voltage'][i] = Values[i]
-            Item['StartPoint'][i] = ChangePoints[i - 1]+delayinpoints
-            Item['EndPoint'][i] = ChangePoints[i]
-            Item['Mean'][i] = np.mean(trace)
-            Item['STD'][i] = np.std(trace)
-            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
-            if popt[0]:
-                Item['ExponentialFitValues'][:, i] = popt
-                Item['ExponentialFitSTD'][:, i] = np.sqrt(np.diag(pcov))
-            else:
-                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][i]))
-                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
-
-        # Last
-        if 1:
-            trace = output[current][ChangePoints[len(ChangePoints) - 1] + delayinpoints : len(output[current]) - 1]
-            Item['Voltage'][-1:] = Values[len(Values) - 1]
-            Item['StartPoint'][-1:] = ChangePoints[len(ChangePoints) - 1]+delayinpoints
-            Item['EndPoint'][-1:] = len(output[current]) - 1
-            Item['Mean'][-1:] = np.mean(trace)
-            Item['STD'][-1:] = np.std(trace)
-            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
-            if popt[0]:
-                Item['ExponentialFitValues'][:, -1] = popt
-                Item['ExponentialFitSTD'][:, -1] = np.sqrt(np.diag(pcov))
-            else:
-                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][-1:]))
-                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
-
-        sigma_v = 1e-12 * np.ones(len(Item['Voltage']))
-        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['Mean'], sigma_v, Item['STD'])
-        x_fit = np.linspace(min(Item['Voltage']), max(Item['Voltage']), 1000)
-        y_fit = scipy.polyval([b, a], x_fit)
-        Item['YorkFitValues'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
-                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
-        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['ExponentialFitValues'][2,:], sigma_v, Item['ExponentialFitSTD'][2,:])
-        y_fit = scipy.polyval([b, a], x_fit)
-        Item['YorkFitValuesExponential'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
-                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
-        All[current] = Item
-        All['Currents'] = currents
-    return All
 
 def PlotIV(output, AllData, current = 'i1', unit=1e9, axis = '', WithFit = 1):
     axis.errorbar(AllData[current]['Voltage'], AllData[current]['Mean']*unit, yerr=AllData[current]['STD']*unit, fmt='o', label=str(os.path.split(output['filename'])[1])[:-4])
@@ -339,42 +443,9 @@ def PlotIV(output, AllData, current = 'i1', unit=1e9, axis = '', WithFit = 1):
         axis.set_title('IV Plot')
     return axis
 
-def ExpFunc(x, a, b, c):
-    return a * np.exp(-b * x) + c
 
-def MakeExponentialFit(xdata,ydata):
-    try:
-        popt, pcov = curve_fit(ExpFunc, xdata, ydata)
-        return (popt, pcov)
-    except RuntimeError:
-        popt = (0,0,0)
-        pcov = 0
-        return (popt, pcov)
 
-def FitIV(IVData, plot=1, x='i1', y='v1', iv=0):
-    sigma_v = 1e-12*np.ones(len(IVData['Voltage']))
-    (a, b, sigma_a, sigma_b, b_save) = YorkFit(IVData['Voltage'], IVData['Mean'], sigma_v, IVData['STD'])
-    x_fit = np.linspace(min(IVData['Voltage']), max(IVData['Voltage']), 1000)
-    y_fit = scipy.polyval([b,a], x_fit)
-    if plot:
-        spacing = np.sort(IVData['Voltage'])
-        #iv = pg.PlotWidget(title='Current-Voltage Plot', background=None)
-        err = pg.ErrorBarItem(x=IVData['Voltage'], y=IVData['Mean'], top=IVData['STD'],
-                              bottom=IVData['STD'], pen='b', beam=((spacing[1]-spacing[0]))/2)
-        iv.addItem(err)
-        iv.plot(IVData['Voltage'], IVData['Mean'], symbol='o', pen=None)
-        iv.setLabel('left', text=x + ', Current', units='A')
-        iv.setLabel('bottom', text=y + ', Voltage', units='V')
-        iv.plot(x_fit, y_fit, pen='r')
-        textval = pg.siFormat(1/b, precision=5, suffix='Ohm', space=True, error=None, minVal=1e-25, allowUnicode=True)
-        textit = pg.TextItem(text=textval, color=(0, 0, 0))
-        textit.setPos(min(IVData['Voltage']), max(IVData['Mean']))
-        iv.addItem(textit)
 
-    else:
-        iv=0
-    YorkFitValues={'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept':a, 'Slope':b, 'Sigma_Yintercept':sigma_a, 'Sigma_Slope':sigma_b, 'Parameter':b_save}
-    return (YorkFitValues, iv)
 
 def PlotExtractedPart(output, AllData, current = 'i1', unit=1e9, axis = '', axis2 = ''):
     time = np.arange(0, len(output[current])) / output['samplerate']
@@ -407,53 +478,15 @@ def MakePSD(input, samplerate, fig):
     #f, Pxx_den = scipy.signal.welch(input, samplerate, nperseg=10*256, scaling='spectrum')
     fig.setLabel('left', 'PSD', units='pA^2/Hz')
     fig.setLabel('bottom', 'Frequency', units='Hz')
+    print(f)
+    f = np.delete(f, 0)
+    Pxx_den = np.delete(Pxx_den, 0)
+    print(f)
     fig.setLogMode(x=True, y=True)
     fig.plot(f, Pxx_den*1e24, pen='k')
     return (f,Pxx_den)
 
-def YorkFit(X, Y, sigma_X, sigma_Y, r=0):
-    N_itermax=10 #maximum number of interations
-    tol=1e-15 #relative tolerance to stop at
-    N = len(X)
-    temp = np.matrix([X, np.ones(N)])
-    #make initial guess at b using linear squares
 
-    tmp = np.matrix(Y)*lin.pinv(temp)
-    b_lse = np.array(tmp)[0][0]
-    #a_lse=tmp(2);
-    b = b_lse #initial guess
-    omega_X = np.true_divide(1,np.power(sigma_X,2))
-    omega_Y = np.true_divide(1, np.power(sigma_Y,2))
-    alpha=np.sqrt(omega_X*omega_Y)
-    b_save = np.zeros(N_itermax+1) #vector to save b iterations in
-    b_save[0]=b
-
-    for i in np.arange(N_itermax):
-        W=omega_X*omega_Y/(omega_X+b*b*omega_Y-2*b*r*alpha)
-
-        X_bar=np.sum(W*X)/np.sum(W)
-        Y_bar=np.sum(W*Y)/np.sum(W)
-
-        U=X-X_bar
-        V=Y-Y_bar
-
-        beta=W*(U/omega_Y+b*V/omega_X-(b*U+V)*r/alpha)
-
-        b=sum(W*beta*V)/sum(W*beta*U)
-        b_save[i+1]=b
-        if np.abs((b_save[i+1]-b_save[i])/b_save[i+1]) < tol:
-            break
-
-    a=Y_bar-b*X_bar
-    x=X_bar+beta
-    y=Y_bar+b*beta
-    x_bar=sum(W*x)/sum(W)
-    y_bar=sum(W*y)/sum(W)
-    u=x-x_bar
-    #%v=y-y_bar
-    sigma_b=np.sqrt(1/sum(W*u*u))
-    sigma_a=np.sqrt(1./sum(W)+x_bar*x_bar*sigma_b*sigma_b)
-    return (a, b, sigma_a, sigma_b, b_save)
 
 def SaveFigureList(folder, list):
     filename=os.path.splitext(os.path.basename(folder))[0]
@@ -667,6 +700,7 @@ def PlotSingle(self):
 
     self.voltagepl.enableAutoRange(axis='y')
     self.p1.enableAutoRange(axis='y')
+    
 
 def SaveToHDF5(self):
     f = h5py.File(self.matfilename + '_OriginalDB.hdf5', "w")
