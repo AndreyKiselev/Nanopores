@@ -654,7 +654,7 @@ def MatplotLibCurrentSignal(self):
     plt.savefig(self.matfilename + str(self.p1.viewRange()[0][0]) + '_Figure.eps')
     #plt.show()
 
-def PlotSingle(self):
+def PlotSingle(self): 
     self.p1.clear()
     self.transverseAxis.clear()
     self.p1.plotItem.hideAxis('right')
