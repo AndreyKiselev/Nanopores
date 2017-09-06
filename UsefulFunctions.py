@@ -1392,5 +1392,5 @@ def CombineEventDatabases(filename, DBfiles):
         lpset1 = set1.create_group('LowPassSettings')
         for o, p in self.coefficients[k].items():
             lpset1.create_dataset(o, data=p)
-        for m, l in self.AnalysisResults[k].items():
+        for m, l in self.AnalysisResults[k].items(): 
             set1.create_dataset(m, data=l)
