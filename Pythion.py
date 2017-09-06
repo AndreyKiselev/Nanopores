@@ -7,7 +7,7 @@ import os
 from scipy import signal
 from scipy import io as spio
 from UserInterface import *
-#from plotgui4k import *  
+#from plotgui4k import *
 #from plotguiretina import *
 import pyqtgraph as pg
 import pyqtgraph.exporters
@@ -68,12 +68,12 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.actionPlot_Common_Events.triggered.connect(self.EventFiltering)
         self.ui.actionPlot_i2_detected_only.triggered.connect(self.EventFiltering)
         self.ui.actionPlot_i1_detected_only.triggered.connect(self.EventFiltering)
-
         self.ui.LPentry.editingFinished.connect(self.Load)
-
         self.ui.actionUse_Clipping.setChecked(False)
         #        self.ui.actionBatch_Process.triggered.connect(self.batchinfodialog)
         self.ui.plotBoth.clicked.connect(self.Plot)
+
+
         ###### Setting up plotting elements and their respective options######
         self.ui.signalplot.setBackground('w')
         self.ui.scatterplot.setBackground('w')
@@ -186,14 +186,18 @@ class GUIForm(QtGui.QMainWindow):
         self.Derivative = 'i2'
 
         ####### Initializing various variables used for analysis##############
+
+        #######variables for downloading
+        self.direc= os.getcwd()
+        self.datafilename = []
+
         self.NumberOfEvents=0
         self.UpwardsOn=0
         self.AnalysisResults = {}
         self.sig = 'i1'
         self.xaxisIV=self.ui.IVxaxis.currentIndex()
         self.yaxisIV=self.ui.IVyaxis.currentIndex()
-        self.Channel2=0
-        self.direc=[]
+        self.Channel2=0        
         self.lr=[]
         self.lastevent=[]
         self.lastClicked=[]
@@ -208,7 +212,20 @@ class GUIForm(QtGui.QMainWindow):
         self.sdf = pd.DataFrame(columns = ['fn','color','deli','frac',
             'dwell','dt','startpoints','endpoints'])
 
-    def Load(self, loadandplot = True):
+    def getfile(self): #load button pressed
+        try:
+            ######## attempt to open dialog from most recent directory########
+            datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat *.mat)") #creates turple with two values: the adress of the selected file and the line of Amplifier Filters
+            if datafilenametemp[0] != '': #if selected
+                self.datafilename=datafilenametemp[0] #full path to the loaded file
+                self.direc=os.path.dirname(self.datafilename) #Return the directory name
+                self.Load() #Load module
+        except IOError:
+            #### if user cancels during file selection, exit loop#############
+            pass
+
+
+    def Load(self, loadandplot = True): #file loader
         print('File Adress: {}'.format(self.datafilename))
         print('Timestamp: {}'.format(uf.creation_date(self.datafilename)))
 
@@ -238,6 +255,7 @@ class GUIForm(QtGui.QMainWindow):
         self.LPfiltercutoff = np.float64(self.ui.LPentry.text())*1000
         self.outputsamplerate = np.float64(self.ui.outputsamplerateentry.text())*1000 #use integer multiples of 4166.67 ie 2083.33 or 1041.67
         print()
+
         if str(os.path.splitext(self.datafilename)[1])=='.dat':
             print('Loading Axopatch Data')
             self.out=uf.ImportAxopatchData(self.datafilename)
@@ -277,7 +295,7 @@ class GUIForm(QtGui.QMainWindow):
                 self.data = self.out['i1']
                 self.vdata = np.ones(len(self.data)) * self.out['v1']
                 e=timer()
-                print('Chimera Loading:' + str(e-s))
+                print('Chimera Loading:' + str(e-s) + ' sec.')
 
         if str(os.path.splitext(self.datafilename)[1])=='.opt':
             self.data = np.fromfile(self.datafilename, dtype = np.dtype('>d'))
@@ -393,13 +411,6 @@ class GUIForm(QtGui.QMainWindow):
                 uf.DoublePlot(self)
             else:
                 uf.PlotSingle(self)
-
-    def getfile(self):
-        datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat *.mat)")
-        if not datafilenametemp[0]=='':
-            self.datafilename=datafilenametemp[0]
-            self.direc=os.path.dirname(self.datafilename)
-            self.Load()
 
     def SaveIVData(self):
         uf.ExportIVData(self)
@@ -560,7 +571,7 @@ class GUIForm(QtGui.QMainWindow):
             self.p1.addItem(self.lr)
 
 #            self.p1.plot(self.t[::100],self.data[::100],pen='b')
-            self.p1.plot(self.t,self.data,pen='b')
+            self.p1.plot(self.t, self.data, pen='b')
             self.lr.show()
 
         else:
@@ -1006,17 +1017,16 @@ class GUIForm(QtGui.QMainWindow):
         if self.xaxisIV == 1:
             ylab = 'v2'
         self.cutplot.clear()
-        (AllData, a) = uf.CutDataIntoVoltageSegments(self.out, delay=1, plotSegments=1, x=xlab,
-                                                                                y=ylab, extractedSegments = self.cutplot)
-        if AllData is not 0:
+        (ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out)
+        if ChangePoints is not 0:
             # Make IV
-            (self.IVData, b) = uf.MakeIV(AllData, plot=0)
+            self.IVData = uf.MakeIV(self.out, ChangePoints, sweepedChannel)
             # Fit IV
             self.ivplota.clear()
-            (self.FitValues, iv) = uf.FitIV(self.IVData, x=xlab, y=ylab, iv=self.ivplota)
+            (self.FitValues, iv) = uf.FitIV(self.IVData['i1'], x=xlab, y=ylab, iv=self.ivplota)
             self.conductance = self.FitValues['Slope']
             self.UpdateIV()
-        # Update Conductance
+            # Update Conductance
 
     def UpdateIV(self):
         self.ui.conductanceText.setText('Conductance: ' + pg.siFormat(self.conductance, precision=5, suffix='S', space=True, error=None, minVal=1e-25, allowUnicode=True))
@@ -1032,7 +1042,7 @@ class GUIForm(QtGui.QMainWindow):
         if self.ui.concentrationValue.value():
             size=uf.CalculatePoreSize(valuetoupdate, self.ui.porelengthValue.value(), self.ui.concentrationValue.value())
             self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=5, suffix='m', space=True, error=None, minVal=1e-25, allowUnicode=True))
-        
+
     def customCond(self):
         if self.ui.groupBox_5.isChecked():
             self.useCustomConductance = 1
