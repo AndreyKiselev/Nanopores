@@ -1,30 +1,48 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
-import sys
-import numpy as np
-from scipy import ndimage
-import os
+
+import numpy as np # arrays and mathematics
+import scipy #scientific
+import pandas as pd #data manipulation and analisys
+import sys  #system-specific parameters and functions
+import h5py #for huge amounts of numerical data in binaries
+import os #pathname manipulations
+import time #time access and conversions
+import platform #what system we have
+
+
+#some stuff from scipy
 from scipy import signal
 from scipy import io as spio
-from UserInterface import *
+from scipy import ndimage
+
+#some stuff from pandas
+import pandas.io.parsers
+
+#graph drawning modules
 #from plotgui4k import *
 #from plotguiretina import *
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from pyqtgraph.dockarea import *
-import pandas.io.parsers
-import pandas as pd
-from abfheader import *
-from CUSUMV2 import detect_cusum
-from PoreSizer import *
-from batchinfo import *
-import UsefulFunctions as uf
-import scipy
-from matplotlib.backends.backend_pdf import PdfPages
-import time
-import h5py
-from timeit import default_timer as timer
-import platform
+
+
+from timeit import default_timer as timer #for time measurements
+
+
+########written by the developer########
+import UsefulFunctions as uf #module for data processing
+from UserInterface import * #loading pyqt5 designer generated graphical visualisation for program
+from abfheader import * #code for proccessing some binaries
+from CUSUMV2 import detect_cusum #CUSUM algorithm
+from PoreSizer import * #poresizer
+from batchinfo import * #for visuallization
+
+
+from matplotlib.backends.backend_pdf import PdfPages #PDF pages creation
+
+
+
 
 
 class GUIForm(QtGui.QMainWindow):
@@ -216,7 +234,7 @@ class GUIForm(QtGui.QMainWindow):
         try:
             ######## attempt to open dialog from most recent directory########
             datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat *.mat)") #creates turple with two values: the adress of the selected file and the line of Amplifier Filters
-            if datafilenametemp[0] != '': #if selected
+            if datafilenametemp[0] != '': #if you select some file the param will be not 0
                 self.datafilename=datafilenametemp[0] #full path to the loaded file
                 self.direc=os.path.dirname(self.datafilename) #Return the directory name
                 self.Load() #Load module
@@ -226,10 +244,10 @@ class GUIForm(QtGui.QMainWindow):
 
 
     def Load(self, loadandplot = True): #file loader
-        print('File Adress: {}'.format(self.datafilename))
-        print('Timestamp: {}'.format(uf.creation_date(self.datafilename)))
+        print('File Adress: {}'.format(self.datafilename)) #print chosen file adress on command line
+        print('Timestamp: {}'.format(uf.creation_date(self.datafilename))) #prints file creation time
 
-        self.count=0
+        self.count=0 #no idea for what
         if hasattr(self, 'pp'):
             if hasattr(self.pp,'close'):
                 self.pp.close()
