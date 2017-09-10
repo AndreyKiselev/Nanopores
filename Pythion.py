@@ -30,7 +30,7 @@ from pyqtgraph.dockarea import *
 from timeit import default_timer as timer #for time measurements
 
 
-########written by the developer########
+########written by developers########
 import UsefulFunctions as uf #module for data processing
 from UserInterface import * #loading pyqt5 designer generated graphical visualisation for program
 from abfheader import * #code for proccessing some binaries
@@ -41,10 +41,7 @@ from batchinfo import * #for visuallization
 
 from matplotlib.backends.backend_pdf import PdfPages #PDF pages creation
 
-
-
-
-
+########Starting the program########
 class GUIForm(QtGui.QMainWindow):
 
 
@@ -55,24 +52,40 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.setupUi(self)
 
         ##########Linking buttons to main functions############
+
+        ##########CUT LOAD BASELINE etc. BUTTONS connection to implementation functions##################################
+        self.ui.loadbutton.clicked.connect(self.getfile) #loadbutton
+        self.ui.clearscatterbutton.clicked.connect(self.clearscatter) #clear data
+        self.ui.analyzebutton.clicked.connect(self.analyze) #analyze
+        self.ui.baselinebutton.clicked.connect(self.baselinecalc) #baseline
+        self.ui.fitbutton.clicked.connect(self.CUSUM) #fit using CUSUM
+        self.ui.cutbutton.clicked.connect(self.cut) #cutbutton
+        self.ui.nextfilebutton.clicked.connect(self.nextfile) #NEXT
+        self.ui.previousfilebutton.clicked.connect(self.previousfile) #PREVIOUS
+        self.ui.invertbutton.clicked.connect(self.invertdata) #INVERT
+
+        ##########Event Navigation#########
+        self.ui.previousbutton.clicked.connect(self.previousevent)
+        self.ui.gobutton.clicked.connect(self.inspectevent)
+        self.ui.nextbutton.clicked.connect(self.nextevent)
+
+        ##########Axopatch Data############
+        self.ui.ndChannel.clicked.connect(self.Plot)
+        self.ui.plotBoth.clicked.connect(self.Plot)
+
+        ##########IV Settings##############
         self.ui.IVxaxis.currentIndexChanged.connect(self.IVAxis)
         self.ui.IVyaxis.currentIndexChanged.connect(self.IVAxis)
-        self.ui.loadbutton.clicked.connect(self.getfile)
-        self.ui.analyzebutton.clicked.connect(self.analyze)
-        self.ui.cutbutton.clicked.connect(self.cut)
-        self.ui.baselinebutton.clicked.connect(self.baselinecalc)
-        self.ui.clearscatterbutton.clicked.connect(self.clearscatter)
-        self.ui.invertbutton.clicked.connect(self.invertdata)
-        #self.ui.invertbutton.clicked.connect(self.makeIV)
-        self.ui.nextfilebutton.clicked.connect(self.nextfile)
-        self.ui.previousfilebutton.clicked.connect(self.previousfile)
-        self.ui.gobutton.clicked.connect(self.inspectevent)
-        self.ui.previousbutton.clicked.connect(self.previousevent)
-        self.ui.nextbutton.clicked.connect(self.nextevent)
-        self.ui.fitbutton.clicked.connect(self.CUSUM)
-        self.ui.Poresizeraction.triggered.connect(self.sizethepore)
-        self.ui.ndChannel.clicked.connect(self.Plot)
+
+        ##########makeIV###################
         self.ui.makeIVButton.clicked.connect(self.makeIV)
+
+        ##########Pore Size -> Settings####   
+        
+        self.ui.Poresizeraction.triggered.connect(self.sizethepore)
+        
+
+
         self.ui.actionSave_All.triggered.connect(self.SaveAllFigures)
         self.ui.groupBox_5.clicked.connect(self.customCond)
         self.ui.customCurrent.valueChanged.connect(self.UpdateIV)
@@ -89,8 +102,7 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.LPentry.editingFinished.connect(self.Load)
         self.ui.actionUse_Clipping.setChecked(False)
         #        self.ui.actionBatch_Process.triggered.connect(self.batchinfodialog)
-        self.ui.plotBoth.clicked.connect(self.Plot)
-
+        #self.ui.invertbutton.clicked.connect(self.makeIV)
 
         ###### Setting up plotting elements and their respective options######
         self.ui.signalplot.setBackground('w')
