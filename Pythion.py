@@ -80,73 +80,91 @@ class GUIForm(QtGui.QMainWindow):
         ##########makeIV###################
         self.ui.makeIVButton.clicked.connect(self.makeIV)
 
-        ##########Pore Size -> Settings####   
-        
-        self.ui.Poresizeraction.triggered.connect(self.sizethepore)
-        
+        ##########Pore Size -> Settings####  
+        self.ui.concentrationValue.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
+        self.ui.porelengthValue.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
 
+        ##########Pore Size -> Manual calculation####           
+        self.ui.groupBox_5.clicked.connect(self.customCond)  #when manual calculation pressed
+        self.ui.customCurrent.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
+        self.ui.customVoltage.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
+     
+        ##########Main window########################
+        ##########Figure saving -> save all##########
+        self.ui.actionSave_All.triggered.connect(self.SaveAllFigures)####nothing happens
 
-        self.ui.actionSave_All.triggered.connect(self.SaveAllFigures)
-        self.ui.groupBox_5.clicked.connect(self.customCond)
-        self.ui.customCurrent.valueChanged.connect(self.UpdateIV)
-        self.ui.customVoltage.valueChanged.connect(self.UpdateIV)
-        self.ui.customConductanceSpinBox.valueChanged.connect(self.UpdateIV)
-        self.ui.concentrationValue.valueChanged.connect(self.UpdateIV)
-        self.ui.porelengthValue.valueChanged.connect(self.UpdateIV)
+        ##########Display settings###################
         self.ui.actionUse_Clipping.triggered.connect(self.DisplaySettings)
         self.ui.actionUse_Downsampling.triggered.connect(self.DisplaySettings)
         self.ui.actionSave_IV_Data.triggered.connect(self.SaveIVData)
+
+        ##########Event plot#########################
         self.ui.actionPlot_Common_Events.triggered.connect(self.EventFiltering)
         self.ui.actionPlot_i2_detected_only.triggered.connect(self.EventFiltering)
         self.ui.actionPlot_i1_detected_only.triggered.connect(self.EventFiltering)
-        self.ui.LPentry.editingFinished.connect(self.Load)
-        self.ui.actionUse_Clipping.setChecked(False)
-        #        self.ui.actionBatch_Process.triggered.connect(self.batchinfodialog)
-        #self.ui.invertbutton.clicked.connect(self.makeIV)
+        
+        ###########Poresizer -> Find Pore size########
+        self.ui.actionFind_pore_size.triggered.connect(self.sizethepore)  ####special func for finding the pore size see manual
+
+        ###########Bathc Brocesser -> Batch it########
+        self.ui.actionBatch_Process.triggered.connect(self.batchinfodialog)
 
         ###### Setting up plotting elements and their respective options######
+        
+        ###### All plots will have white background###
         self.ui.signalplot.setBackground('w')
-        self.ui.scatterplot.setBackground('w')
+        self.ui.voltageplotwin.setBackground('w')
         self.ui.eventplot.setBackground('w')
+        self.ui.scatterplot.setBackground('w')
         self.ui.frachistplot.setBackground('w')
         self.ui.delihistplot.setBackground('w')
         self.ui.dwellhistplot.setBackground('w')
         self.ui.dthistplot.setBackground('w')
-        self.ui.voltageplotwin.setBackground('w')
-        self.ui.ivplot.setBackground('w')
         self.ui.cutData.setBackground('w')
-#        self.ui.PSDplot.setBackground('w')
+        self.ui.ivplot.setBackground('w')
+        self.ui.powerSpecPlot.setBackground('w')
+
+        #######If only one channel - channel 2 choice not available#####
         self.ui.AxopatchGroup.setVisible(0)
 
-        self.ui.label_2.setText('Output Samplerate (kHz)' + str(pg.siScale(np.float(self.ui.outputsamplerateentry.text()))[1]))
-        self.p1 = self.ui.signalplot
+        ########working with Axis in Plotting at UsefulFunction.py######
         self.transverseAxis = pg.ViewBox()
         self.transverseAxisVoltage = pg.ViewBox()
         self.transverseAxisEvent = pg.ViewBox()
 
+        ########Signal plot ##########################
+        self.p1 = self.ui.signalplot
         self.p1.enableAutoRange(axis='y')
         self.p1.disableAutoRange(axis='x')
+        self.p1.setLabel('top', text='Signal plot')
         self.p1.setDownsampling(ds=True, auto=True, mode='subsample')
         self.p1.setClipToView(True)
 
+        ########Voltage plot##########################
         self.voltagepl = self.ui.voltageplotwin
         self.voltagepl.enableAutoRange(axis='y')
         self.voltagepl.disableAutoRange(axis='x')
+        self.voltagepl.setLabel('top', text='Voltage plot')
         self.voltagepl.setDownsampling(ds=True, auto=True, mode='subsample')
         self.voltagepl.setClipToView(True)
-        self.voltagepl.setXLink(self.p1)
+        self.voltagepl.setXLink(self.p1) #same links for signal plot and for voltageplot
 
-        self.ivplota = self.ui.ivplot
-        #self.ivplot.setLabel('bottom', text='Current', units='A')
-        #self.ivplot.setLabel('left', text='Voltage', units='V')
-        #self.ivplot.enableAutoRange(axis = 'x')
-        self.psdplot = self.ui.powerSpecPlot
-        self.psdplot.setBackground('w')
-        self.cutplot = self.ui.cutData
-        self.cutplot.setLabel('bottom', text='Time', units='s')
-        self.cutplot.setLabel('left', text='Voltage', units='V')
-        self.cutplot.enableAutoRange(axis = 'x')
+        ########Event plot############################
 
+        ###some feature added:
+        ###When first launched, there is a Pyth-ion logo:
+        self.p3 = self.ui.eventplot
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        self.logo = ndimage.imread(dir_path + os.sep + "pythionlogo.png")
+        self.logo = np.rot90(self.logo,-1)
+        self.logo = pg.ImageItem(self.logo)
+        self.p3.addItem(self.logo)
+        self.p3.setAspectLocked(True)
+        self.p3.hideAxis('bottom')
+        self.p3.hideAxis('left')
+        ###will be replaced by Event plot, see Load() function for details
+
+        ########Scatter plot##########################
         self.w1 = self.ui.scatterplot.addPlot()
         self.p2 = pg.ScatterPlotItem()
         self.p2.sigClicked.connect(self.clicked)
@@ -161,38 +179,55 @@ class GUIForm(QtGui.QMainWindow):
         self.cb.move(0,250)
         self.cb.show()
 
+        #########Frachist plot###########################
         self.w2 = self.ui.frachistplot.addPlot()
         self.w2.setLabel('bottom', text='Fractional Current Blockage')
         self.w2.setLabel('left', text='Counts')
+
+        ##########Delihist plot##########################
 
         self.w3 = self.ui.delihistplot.addPlot()
         self.w3.setLabel('bottom', text='ΔI', units ='A')
         self.w3.setLabel('left', text='Counts')
 
+        ##########Dwell Hist Plot########################
+
         self.w4 = self.ui.dwellhistplot.addPlot()
         self.w4.setLabel('bottom', text='Log Dwell Time', units = 'μs')
         self.w4.setLabel('left', text='Counts')
+
+        ##########Dthistplot##############################
 
         self.w5 = self.ui.dthistplot.addPlot()
         self.w5.setLabel('bottom', text='dt', units = 's')
         self.w5.setLabel('left', text='Counts')
 
-#        self.w6 = self.ui.PSDplot.addPlot()
-#        self.w6.setLogMode(x = True, y = True)
-#        self.w6.setLabel('bottom', text='Frequency (Hz)')
-#        self.w6.setLabel('left', text='PSD (pA^2/Hz)')
+        ##########cut Data plot###########################
 
-        self.p3 = self.ui.eventplot
-        self.p3.hideAxis('bottom')
-        self.p3.hideAxis('left')
+        self.cutplot = self.ui.cutData
+        self.cutplot.setLabel('bottom', text='Time', units='s')
+        self.cutplot.setLabel('left', text='Voltage', units='V')
+        self.cutplot.setLabel('top', text='Cut data plot')
+        self.cutplot.enableAutoRange(axis = 'x')
 
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        self.logo = ndimage.imread(dir_path + os.sep + "pythionlogo.png")
-        self.logo = np.rot90(self.logo,-1)
-        self.logo = pg.ImageItem(self.logo)
-        self.p3.addItem(self.logo)
-        self.p3.setAspectLocked(True)
+        ##########IV plot##################################
 
+        self.ivplota = self.ui.ivplot
+        self.ivplota.setLabel('bottom', text='Current', units='A')
+        self.ivplota.setLabel('left', text='Voltage', units='V')
+        self.ivplota.enableAutoRange(axis = 'x')
+        self.ivplota.setLabel('top', text='IV plot')
+
+        ##########Power spectrum density plot##############
+        self.psdplot = self.ui.powerSpecPlot
+        self.psdplot.setLabel('left', 'PSD', units='pA^2/Hz')
+        self.psdplot.setLabel('bottom', 'Frequency', units='Hz')
+        self.psdplot.setLabel('top', text='Power Spectrum Density')        
+
+              
+        
+        
+        ##########Setting up values for pore sizing#########
         self.ui.conductanceText.setText('Conductance: ')
         self.ui.resistanceText.setText('Resistance: ')
         self.ui.poresizeOutput.setText('Pore Size: ')
@@ -201,13 +236,17 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.porelengthValue.setOpts(value=0.7E-9, suffix='m', siPrefix=True, dec=True, step=1e-9, minStep=1e-9)
         self.ui.customCurrent.setOpts(value=10e-9, suffix='A', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
         self.ui.customVoltage.setOpts(value=500e-3, suffix='V', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
-        self.ui.customConductanceSpinBox.setOpts(value=10e-9/500e-3, suffix='S', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
+        self.ui.conductanceOutput.setText(pg.siFormat(10e-9/500e-3, precision=5, suffix='S', space=True, error=None, allowUnicode=True))
 
+
+
+        ##########Setting up coefficients for filtering and event decting for 1st channel######
         self.ui.LP_a.setOpts(value=0.999, suffix='', siPrefix=False, dec=True, step=1e-3, minStep=1e-4)
         self.ui.LP_S.setOpts(value=5, suffix='x STD', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
         self.ui.LP_E.setOpts(value=0, suffix='x STD', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
         self.ui.LP_eventlengthThresh.setOpts(value=1e-3, suffix='s', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
 
+        ##########Setting up coefficients for filtering and event decting for 2nd channel######
         self.ui.LP_a_2.setOpts(value=0.999, suffix='', siPrefix=False, dec=True, step=1e-3, minStep=1e-4)
         self.ui.LP_S_2.setOpts(value=5, suffix='x STD', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
         self.ui.LP_E_2.setOpts(value=0, suffix='x STD', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
@@ -220,7 +259,6 @@ class GUIForm(QtGui.QMainWindow):
         #######variables for downloading
         self.direc= os.getcwd()
         self.datafilename = []
-
         self.NumberOfEvents=0
         self.UpwardsOn=0
         self.AnalysisResults = {}
@@ -259,13 +297,10 @@ class GUIForm(QtGui.QMainWindow):
         print('File Adress: {}'.format(self.datafilename)) #print chosen file adress on command line
         print('Timestamp: {}'.format(uf.creation_date(self.datafilename))) #prints file creation time
 
-        self.count=0 #no idea for what
-        if hasattr(self, 'pp'):
-            if hasattr(self.pp,'close'):
-                self.pp.close()
         self.catdata=[]
         self.batchinfo = pd.DataFrame(columns = list(['cutstart', 'cutend']))
         self.p3.clear()
+        self.p3.setLabel('top', text='Event plot')
         self.p3.setLabel('bottom', text='Current', units='A', unitprefix = 'n')
         self.p3.setLabel('left', text='', units = 'Counts')
         self.p3.setAspectLocked(False)
@@ -283,19 +318,21 @@ class GUIForm(QtGui.QMainWindow):
         self.threshold=np.float64(self.ui.thresholdentry.text())*10**-9
         self.ui.filelabel.setText(self.datafilename)
         self.LPfiltercutoff = np.float64(self.ui.LPentry.text())*1000
-        self.outputsamplerate = np.float64(self.ui.outputsamplerateentry.text())*1000 #use integer multiples of 4166.67 ie 2083.33 or 1041.67
+       
         print()
 
+        ########Importing Axopatch Data######################
         if str(os.path.splitext(self.datafilename)[1])=='.dat':
             print('Loading Axopatch Data')
             self.out=uf.ImportAxopatchData(self.datafilename)
             self.matfilename = str(os.path.splitext(self.datafilename)[0])
             self.outputsamplerate=self.out['samplerate']
-            self.ui.outputsamplerateentry.setText(str(self.out['samplerate']))
+            self.ui.outputsamplerateentry.setText(str(self.out['samplerate']/1000))
             if self.out['graphene']:
                 self.ui.AxopatchGroup.setVisible(1)
             else:
                 self.ui.AxopatchGroup.setVisible(0)
+
 
         if str(os.path.splitext(self.datafilename)[1]) == '.log':
             print('Loading Chimera File')
@@ -308,7 +345,7 @@ class GUIForm(QtGui.QMainWindow):
                 self.ui.outputsamplerateentry.setText(str(self.out['samplerate']/1000))
             else:
                 s=timer()
-                ds_factor = int(self.out['samplerate']/(self.LPfiltercutoff*5))
+                ds_factor = int(self.out['samplerate']/(self.LPfiltercutoff*5))  #density factor
                 if ds_factor>1:
                     ds_sig = scipy.signal.resample(self.out['i1raw'], int(len(self.out['i1raw'])/ds_factor))
                     Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']/ds_factor), 4)  # [0,1] nyquist frequency
@@ -326,92 +363,7 @@ class GUIForm(QtGui.QMainWindow):
                 self.vdata = np.ones(len(self.data)) * self.out['v1']
                 e=timer()
                 print('Chimera Loading:' + str(e-s) + ' sec.')
-
-        if str(os.path.splitext(self.datafilename)[1])=='.opt':
-            self.data = np.fromfile(self.datafilename, dtype = np.dtype('>d'))
-            self.matfilename = str(os.path.splitext(self.datafilename)[0])  
-            
-            try:
-                self.mat = spio.loadmat(self.matfilename + '_inf')  
-                samplerate = np.float64(self.mat['samplerate'])
-                lowpass = np.float64(self.mat['filterfreq'])
-                print(samplerate)
-                print(lowpass)
-            except TypeError:
-                pass
-            
-            if self.outputsamplerate > 250e3:
-                    print('sample rate can not be >250kHz for axopatch files, displaying with a rate of 250kHz')
-                    self.outputsamplerate  = 250e3
-#            self.data=self.data*10**9
-
-            if self.LPfiltercutoff < 100e3:
-                Wn = round(self.LPfiltercutoff/(100*10**3/2),4)
-                b,a = signal.bessel(4, Wn, btype='low');
-                self.data = signal.filtfilt(b,a,self.data)
-            else:
-                print('Filter value too high, data not filtered')
-
-        if str(os.path.splitext(self.datafilename)[1])=='.txt':
-            self.data=pandas.io.parsers.read_csv(self.datafilename,skiprows=1)
-#            self.data=np.reshape(np.array(self.data),np.size(self.data))*10**9
-            self.data=np.reshape(np.array(self.data),np.size(self.data))
-            self.matfilename=str(os.path.splitext(self.datafilename)[0])
-
-        if str(os.path.splitext(self.datafilename)[1])=='.npy':
-            self.data = np.load(self.datafilename)
-            self.matfilename=str(os.path.splitext(self.datafilename)[0])
-
-        if str(os.path.splitext(self.datafilename)[1])=='.abf':
-            f = open(self.datafilename, "rb")  # reopen the file
-            f.seek(6144, os.SEEK_SET)
-            self.data = np.fromfile(f, dtype = np.dtype('<i2'))
-            self.matfilename=str(os.path.splitext(self.datafilename)[0])
-            self.header = read_header(self.datafilename)
-            self.samplerate = 1e6/self.header['protocol']['fADCSequenceInterval']
-            self.telegraphmode = int(self.header['listADCInfo'][0]['nTelegraphEnable'])
-            if self.telegraphmode == 1:
-                self.abflowpass = self.header['listADCInfo'][0]['fTelegraphFilter']
-                self.gain = self.header['listADCInfo'][0]['fTelegraphAdditGain']
-            else:
-                self.gain = 1
-                self.abflowpass = self.samplerate
-                
-            self.data=self.data.astype(float)*(20./(65536*self.gain))*10**-9                
- 
-            if len(self.header['listADCInfo']) == 2:
-                self.v = self.data[1::2]*self.gain/10
-                self.data = self. data[::2]
-            else:
-                self.v = [] 
-               
-                
-            if self.outputsamplerate > self.samplerate:
-                    print('output samplerate can not be higher than samplerate, resetting to original rate')
-                    self.outputsamplerate  = self.samplerate
-                    self.ui.outputsamplerateentry.setText(str((round(self.samplerate)/1000)))
-            if self.LPfiltercutoff >= self.abflowpass:
-                    print('Already LP filtered lower than or at entry, data will not be filtered')
-                    self.LPfiltercutoff  = self.abflowpass
-                    self.ui.LPentry.setText(str((round(self.LPfiltercutoff)/1000)))
-            else:
-                Wn = round(self.LPfiltercutoff/(100*10**3/2),4)
-                b,a = signal.bessel(4, Wn, btype='low');
-                self.data = signal.filtfilt(b,a,self.data)
-
-                
-            tags = self.header['listTag']
-            for tag in tags:
-                if tag['sComment'][0:21] == "Holding on 'Cmd 0' =>":
-                    cmdv = tag['sComment'][22:]
-#                    cmdv = [int(s) for s in cmdv.split() if s.isdigit()]
-                    cmdt = tag ['lTagTime']/self.outputsamplerate
-                    self.p1.addItem(pg.InfiniteLine(cmdt))
-#                    cmdtext = pg.TextItem(text = str(cmdv)+' mV')
-                    cmdtext = pg.TextItem(text = str(cmdv))
-                    self.p1.addItem(cmdtext)
-                    cmdtext.setPos(cmdt,np.max(self.data))
-
+    
         self.t = np.arange(len(self.out['i1']))
         self.t = self.t/self.out['samplerate']
        # if str(os.path.splitext(self.datafilename)[1])=='.log':
@@ -1062,8 +1014,8 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.conductanceText.setText('Conductance: ' + pg.siFormat(self.conductance, precision=5, suffix='S', space=True, error=None, minVal=1e-25, allowUnicode=True))
         self.ui.resistanceText.setText('Resistance: ' + pg.siFormat(1/self.conductance, precision=5, suffix='Ohm', space=True, error=None, minVal=1e-25, allowUnicode=True))
         if self.useCustomConductance:
-            self.ui.customConductanceSpinBox.setValue(self.ui.customCurrent.value()/self.ui.customVoltage.value())
-            valuetoupdate=np.float(self.ui.customConductanceSpinBox.value())
+            self.ui.conductanceOutput.setText(pg.siFormat(self.ui.customCurrent.value()/self.ui.customVoltage.value(), precision=5, suffix='S', space=True, error=None, allowUnicode=True))
+            valuetoupdate=np.float(self.ui.customCurrent.value()/self.ui.customVoltage.value())
         else:
             valuetoupdate=self.conductance
         print(self.ui.porelengthValue.value())

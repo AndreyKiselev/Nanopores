@@ -300,12 +300,12 @@ def Reshape1DTo2D(inputarray, buffersize):
     currents = np.array([], dtype=np.float64)
     #print(npieces)
 
-    for i in range(1, npieces+1):
+    for i in range(1, int(npieces+1)):
         if i % 2 == 1:
-            currents = np.append(currents, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
+            currents = np.append(currents, inputarray[int((i-1)*buffersize):int(i*buffersize-1)], axis=0)
             #print('Length Currents: {}'.format(len(currents)))
         else:
-            voltages = np.append(voltages, inputarray[(i-1)*buffersize:i*buffersize-1], axis=0)
+            voltages = np.append(voltages, inputarray[int((i-1)*buffersize):int(i*buffersize-1)], axis=0)
             #print('Length Voltages: {}'.format(len(voltages)))
 
     v1 = np.ones((len(voltages)), dtype=np.float64)
@@ -476,8 +476,6 @@ def ExportIVData(self):
 def MakePSD(input, samplerate, fig):
     f, Pxx_den = scipy.signal.periodogram(input, samplerate)
     #f, Pxx_den = scipy.signal.welch(input, samplerate, nperseg=10*256, scaling='spectrum')
-    fig.setLabel('left', 'PSD', units='pA^2/Hz')
-    fig.setLabel('bottom', 'Frequency', units='Hz')
     print(f)
     f = np.delete(f, 0)
     Pxx_den = np.delete(Pxx_den, 0)
