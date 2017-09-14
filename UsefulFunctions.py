@@ -476,6 +476,7 @@ def ExportIVData(self):
 def MakePSD(input, samplerate, fig):
     f, Pxx_den = scipy.signal.periodogram(input, samplerate)
     #f, Pxx_den = scipy.signal.welch(input, samplerate, nperseg=10*256, scaling='spectrum')
+
     print(f)
     f = np.delete(f, 0)
     Pxx_den = np.delete(Pxx_den, 0)

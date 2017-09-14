@@ -33,7 +33,6 @@ from timeit import default_timer as timer #for time measurements
 ########written by developers########
 import UsefulFunctions as uf #module for data processing
 from UserInterface import * #loading pyqt5 designer generated graphical visualisation for program
-from abfheader import * #code for proccessing some binaries
 from CUSUMV2 import detect_cusum #CUSUM algorithm
 from PoreSizer import * #poresizer
 from batchinfo import * #for visuallization
@@ -76,6 +75,8 @@ class GUIForm(QtGui.QMainWindow):
         ##########IV Settings##############
         self.ui.IVxaxis.currentIndexChanged.connect(self.IVAxis)
         self.ui.IVyaxis.currentIndexChanged.connect(self.IVAxis)
+        self.xaxisIV=self.ui.IVxaxis.currentIndex() #new variable for future work
+        self.yaxisIV=self.ui.IVyaxis.currentIndex() #new variable for future work
 
         ##########makeIV###################
         self.ui.makeIVButton.clicked.connect(self.makeIV)
@@ -134,18 +135,18 @@ class GUIForm(QtGui.QMainWindow):
 
         ########Signal plot ##########################
         self.p1 = self.ui.signalplot
-        self.p1.enableAutoRange(axis='y')
-        self.p1.disableAutoRange(axis='x')
-        self.p1.setLabel('top', text='Signal plot')
-        self.p1.setDownsampling(ds=True, auto=True, mode='subsample')
+        self.p1.enableAutoRange(axis = 'y')
+        self.p1.disableAutoRange(axis = 'x')
+        self.p1.setLabel('top', text = 'Signal plot')
+        self.p1.setDownsampling(ds = True, auto = True, mode = 'subsample')
         self.p1.setClipToView(True)
 
         ########Voltage plot##########################
         self.voltagepl = self.ui.voltageplotwin
-        self.voltagepl.enableAutoRange(axis='y')
-        self.voltagepl.disableAutoRange(axis='x')
-        self.voltagepl.setLabel('top', text='Voltage plot')
-        self.voltagepl.setDownsampling(ds=True, auto=True, mode='subsample')
+        self.voltagepl.enableAutoRange(axis = 'y')
+        self.voltagepl.disableAutoRange(axis = 'x')
+        self.voltagepl.setLabel('top', text = 'Voltage plot')
+        self.voltagepl.setDownsampling(ds = True, auto = True, mode = 'subsample')
         self.voltagepl.setClipToView(True)
         self.voltagepl.setXLink(self.p1) #same links for signal plot and for voltageplot
 
@@ -169,11 +170,11 @@ class GUIForm(QtGui.QMainWindow):
         self.p2 = pg.ScatterPlotItem()
         self.p2.sigClicked.connect(self.clicked)
         self.w1.addItem(self.p2)
-        self.w1.setLabel('bottom', text='Time', units=u'μs')
-        self.w1.setLabel('left', text='Fractional Current Blockage')
-        self.w1.setLogMode(x=True,y=False)
-        self.w1.showGrid(x=True, y=True)
-        self.cb = pg.ColorButton(self.ui.scatterplot, color=(0,0,255,50))
+        self.w1.setLabel('bottom', text = 'Time', units = u'μs')
+        self.w1.setLabel('left', text = 'Fractional Current Blockage')
+        self.w1.setLogMode(x = True,y = False)
+        self.w1.showGrid(x = True, y = True)
+        self.cb = pg.ColorButton(self.ui.scatterplot, color = (0,0,255,50))
         self.cb.setFixedHeight(30)
         self.cb.setFixedWidth(30)
         self.cb.move(0,250)
@@ -181,42 +182,42 @@ class GUIForm(QtGui.QMainWindow):
 
         #########Frachist plot###########################
         self.w2 = self.ui.frachistplot.addPlot()
-        self.w2.setLabel('bottom', text='Fractional Current Blockage')
-        self.w2.setLabel('left', text='Counts')
+        self.w2.setLabel('bottom', text = 'Fractional Current Blockage')
+        self.w2.setLabel('left', text = 'Counts')
 
         ##########Delihist plot##########################
 
         self.w3 = self.ui.delihistplot.addPlot()
-        self.w3.setLabel('bottom', text='ΔI', units ='A')
-        self.w3.setLabel('left', text='Counts')
+        self.w3.setLabel('bottom', text = 'ΔI', units = 'A')
+        self.w3.setLabel('left', text = 'Counts')
 
         ##########Dwell Hist Plot########################
 
         self.w4 = self.ui.dwellhistplot.addPlot()
-        self.w4.setLabel('bottom', text='Log Dwell Time', units = 'μs')
-        self.w4.setLabel('left', text='Counts')
+        self.w4.setLabel('bottom', text = 'Log Dwell Time', units = 'μs')
+        self.w4.setLabel('left', text = 'Counts')
 
         ##########Dthistplot##############################
 
         self.w5 = self.ui.dthistplot.addPlot()
-        self.w5.setLabel('bottom', text='dt', units = 's')
-        self.w5.setLabel('left', text='Counts')
+        self.w5.setLabel('bottom', text = 'dt', units = 's')
+        self.w5.setLabel('left', text = 'Counts')
 
         ##########cut Data plot###########################
 
         self.cutplot = self.ui.cutData
-        self.cutplot.setLabel('bottom', text='Time', units='s')
-        self.cutplot.setLabel('left', text='Voltage', units='V')
-        self.cutplot.setLabel('top', text='Cut data plot')
+        self.cutplot.setLabel('bottom', text = 'Time', units = 's')
+        self.cutplot.setLabel('left', text = 'Voltage', units = 'V')
+        self.cutplot.setLabel('top', text = 'Cut data plot')
         self.cutplot.enableAutoRange(axis = 'x')
 
         ##########IV plot##################################
 
         self.ivplota = self.ui.ivplot
-        self.ivplota.setLabel('bottom', text='Current', units='A')
-        self.ivplota.setLabel('left', text='Voltage', units='V')
+        self.ivplota.setLabel('bottom', text = 'Current', units = 'A')
+        self.ivplota.setLabel('left', text = 'Voltage', units = 'V')
         self.ivplota.enableAutoRange(axis = 'x')
-        self.ivplota.setLabel('top', text='IV plot')
+        self.ivplota.setLabel('top', text = 'IV plot')
 
         ##########Power spectrum density plot##############
         self.psdplot = self.ui.powerSpecPlot
@@ -256,21 +257,22 @@ class GUIForm(QtGui.QMainWindow):
 
         ####### Initializing various variables used for analysis##############
 
-        #######variables for downloading
-        self.direc= os.getcwd()
+        #######variables for downloading data
+        self.direc = os.getcwd()
         self.datafilename = []
-        self.NumberOfEvents=0
-        self.UpwardsOn=0
+
+        #######Event analysis
+        self.NumberOfEvents = 0
+        self.UpwardsOn = 0
         self.AnalysisResults = {}
         self.sig = 'i1'
-        self.xaxisIV=self.ui.IVxaxis.currentIndex()
-        self.yaxisIV=self.ui.IVyaxis.currentIndex()
-        self.Channel2=0        
-        self.lr=[]
-        self.lastevent=[]
-        self.lastClicked=[]
-        self.hasbaselinebeenset=0
-        self.lastevent=0
+
+           
+        #######Cut and baselinecalc    
+        self.lr = [] #Linear region item
+        self.hasbaselinebeenset = 0
+
+        #######Stats graphics-> Scatter, Frac...######
         self.deli=[]
         self.frac=[]
         self.dwell=[]
@@ -283,7 +285,7 @@ class GUIForm(QtGui.QMainWindow):
     def getfile(self): #load button pressed
         try:
             ######## attempt to open dialog from most recent directory########
-            datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.log *.opt *.npy *.txt *.abf *.dat *.mat)") #creates turple with two values: the adress of the selected file and the line of Amplifier Filters
+            datafilenametemp = QtGui.QFileDialog.getOpenFileName(parent=self, caption='Open file', directory=str(self.direc), filter="Amplifier Files(*.dat *.log  *.mat)") #creates turple with two values: the adress of the selected file and the line of Amplifier Filters
             if datafilenametemp[0] != '': #if you select some file the param will be not 0
                 self.datafilename=datafilenametemp[0] #full path to the loaded file
                 self.direc=os.path.dirname(self.datafilename) #Return the directory name
@@ -294,11 +296,12 @@ class GUIForm(QtGui.QMainWindow):
 
 
     def Load(self, loadandplot = True): #file loader
-        print('File Adress: {}'.format(self.datafilename)) #print chosen file adress on command line
-        print('Timestamp: {}'.format(uf.creation_date(self.datafilename))) #prints file creation time
 
-        self.catdata=[]
+        print('File Adress: {}'.format(self.datafilename)) #print chosen file adress on command line
+
         self.batchinfo = pd.DataFrame(columns = list(['cutstart', 'cutend']))
+
+        #####Event plot cutting off Pyth-ion logo, inserting Event plot
         self.p3.clear()
         self.p3.setLabel('top', text='Event plot')
         self.p3.setLabel('bottom', text='Current', units='A', unitprefix = 'n')
@@ -306,11 +309,7 @@ class GUIForm(QtGui.QMainWindow):
         self.p3.setAspectLocked(False)
         self.p1.enableAutoRange(axis='x')
 
-        colors = np.array(self.sdf.color)
-        for i in range(len(colors)):
-            colors[i] = pg.Color(colors[i])
-
-        self.p2.setBrush(colors, mask=None)
+        
         self.ui.eventinfolabel.clear()
         self.totalplotpoints=len(self.p2.data)
         self.ui.eventnumberentry.setText(str(0))
@@ -345,10 +344,11 @@ class GUIForm(QtGui.QMainWindow):
                 self.ui.outputsamplerateentry.setText(str(self.out['samplerate']/1000))
             else:
                 s=timer()
-                ds_factor = int(self.out['samplerate']/(self.LPfiltercutoff*5))  #density factor
+                dsr = self.LPfiltercutoff*4 # desired sample rate
+                ds_factor = int(self.out['samplerate']/(dsr))  #down sampling factor
                 if ds_factor>1:
                     ds_sig = scipy.signal.resample(self.out['i1raw'], int(len(self.out['i1raw'])/ds_factor))
-                    Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']/ds_factor), 4)  # [0,1] nyquist frequency
+                    Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']), 4)  # [0,1] nyquist frequency
                     b, a = signal.bessel(4, Wn, btype='low', analog=False)
                     self.out['i1'] = signal.filtfilt(b, a, ds_sig)
                     self.ui.outputsamplerateentry.setText(str(self.out['samplerate'] / ds_factor / 1000))
