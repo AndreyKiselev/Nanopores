@@ -8,7 +8,7 @@ import pickle as pkl
 from scipy import io
 from scipy import signal
 from PyQt5 import QtGui, QtWidgets
-from numpy import linalg as lin
+from numpy import linalg as lin #import linear algebra
 import pyqtgraph as pg
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -16,8 +16,10 @@ import pandas as pd
 import h5py
 from timeit import default_timer as timer
 import platform
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit #fitting of data to function
 
+def CalculatePoreSize(G, L, s): # Basic formula for pore size calculation
+    return (G+np.sqrt(G*(G+16*L*s/np.pi)))/(2*s)
 
 def ImportAxopatchData(datafilename):
     x=np.fromfile(datafilename, np.dtype('>f4'))
@@ -68,7 +70,7 @@ def ImportChimeraRaw(datafilename):
     data = -ADCvref + (2 * ADCvref) * (data & bitmask) / 2 ** 16
     data = (data / closedloop_gain + currentoffset)
     data.shape = [data.shape[1], ]
-    output = {'matfilename': str(os.path.splitext(datafilename)[0]),'i1raw': data, 'v1': np.float64(matfile['SETUP_mVoffset']), 'samplerate': np.int64(samplerate), 'type': 'ChimeraRaw', 'filename': datafilename}
+    output = {'matfilename': str(os.path.splitext(datafilename)[0]),'i1raw': data, 'v1': np.float64(matfile['SETUP_mVoffset']), 'samplerate': np.int64(samplerate), 'type': 'ChimeraRaw', 'filename': datafilename} #final data representation
     return output
 
 def ImportChimeraData(datafilename):
@@ -78,10 +80,68 @@ def ImportChimeraData(datafilename):
         data = np.fromfile(datafilename, np.dtype('float64'))
         buffersize = matfile['DisplayBuffer']
         out = Reshape1DTo2D(data, buffersize)
-        output = {'i1': out['i1'], 'v1': out['v1'], 'samplerate':float(samplerate), 'type': 'ChimeraNotRaw', 'filename': datafilename}
+        output = {'i1': out['i1'], 'v1': out['v1'], 'samplerate':float(samplerate), 'type': 'ChimeraNotRaw', 'filename': datafilename} #final data representation
     else:
         output = ImportChimeraRaw(datafilename)
     return output
+
+
+def PlotSingle(self):
+    self.p1.clear() #clear signal plot
+    self.p3.clear() #clear event plot
+    self.voltagepl.clear() #clear voltage plot
+    self.transverseAxis.clear() #clear axis
+    self.transverseAxisVoltage.clear() #clear axis
+    self.p1.plotItem.hideAxis('right') #clear axis for transvers current (2nd channel)
+    self.voltagepl.plotItem.hideAxis('right') #clear axis for transvers voltage (2nd channel)
+    
+
+    if self.ui.ndChannel.isChecked():
+        temp_i = self.out['i2'] #channel2 for current
+        temp_v = self.out['v2'] #channel2 for voltage
+        self.p1.setLabel('left', text='Transverse Current', units='A') #setting current as in-plane current
+        self.voltagepl.setLabel('left', text='Transverse Voltage', units='V') #setting voltage
+    else:        
+        temp_i = np.array(self.out['i1']) #channel1 for current
+        temp_v = self.out['v1']  #channel1 for voltage
+        self.p1.setLabel('left', text='Ionic Current', units='A') #setting current as perpendicular to the plane current
+        self.voltagepl.setLabel('left', text='Ionic Voltage', units='V') #setting voltage
+
+    self.p1.setLabel('bottom', text='Time', units='s') #setting time axis for current
+    self.voltagepl.setLabel('bottom', text='Time', units='s') #setting time axis for voltage
+    self.p1.plot(self.t, temp_i, pen='b') #plotting current plot
+    aphy, aphx = np.histogram(temp_i, bins=int(np.round(len(temp_i) / 1000)))
+
+    aphhist = pg.PlotCurveItem(aphx, aphy, stepMode=True, fillLevel=0, brush='b')
+    self.p3.addItem(aphhist)
+
+    if self.out['type'] == 'ChimeraRaw':
+        self.voltagepl.addLine(y=self.out['v1'], pen='b')
+    else:
+        self.voltagepl.plot(self.t, temp_v, pen='b')
+
+    self.psdplot.clear()
+    MakePSD(temp_i, self.out['samplerate'], self.psdplot)
+    siSamplerate = pg.siScale(self.out['samplerate'])
+    siSTD = pg.siScale(np.std(temp_i))
+
+    self.ui.SampleRateLabel.setText(
+        'Samplerate: ' + str(self.out['samplerate'] * siSamplerate[0]) + siSamplerate[1] + 'Hz')
+    self.ui.STDLabel.setText('STD: ' + str(siSTD[0] * np.std(temp_i)) + siSTD[1] + 'A')
+
+    self.voltagepl.enableAutoRange(axis='y')
+    self.p1.enableAutoRange(axis='y')
+    
+def MakePSD(input, samplerate, fig):
+    f, Pxx_den = scipy.signal.periodogram(input, samplerate)
+    #f, Pxx_den = scipy.signal.welch(input, samplerate, nperseg=10*256, scaling='spectrum')
+    fig.setLabel('left', 'PSD', units='pA^2/Hz')
+    fig.setLabel('bottom', 'Frequency', units='Hz')
+    f = np.delete(f,0)
+    Pxx_den = np.delete(Pxx_den,0)
+    fig.setLogMode(x=True, y=True)
+    fig.plot(f, Pxx_den*1e24, pen='k')
+    return (f,Pxx_den)
 
 
 def CutDataIntoVoltageSegments(output):
@@ -104,62 +164,6 @@ def CutDataIntoVoltageSegments(output):
                 sweepedChannel = 'v2'
     print('Cutting into Segments...\n{} change points detected in channel {}...'.format(len(ChangePoints), sweepedChannel))
     return (ChangePoints, sweepedChannel)
-
-def ExpFunc(x, a, b, c):
-    return a * np.exp(-b * x) + c
-
-def MakeExponentialFit(xdata,ydata):
-    try:
-        popt, pcov = curve_fit(ExpFunc, xdata, ydata)
-        return (popt, pcov)
-    except RuntimeError:
-        popt = (0,0,0)
-        pcov = 0
-        return (popt, pcov)
-
-def YorkFit(X, Y, sigma_X, sigma_Y, r=0):
-    N_itermax=10 #maximum number of interations
-    tol=1e-15 #relative tolerance to stop at
-    N = len(X)
-    temp = np.matrix([X, np.ones(N)])
-    #make initial guess at b using linear squares
-
-    tmp = np.matrix(Y)*lin.pinv(temp)
-    b_lse = np.array(tmp)[0][0]
-    #a_lse=tmp(2);
-    b = b_lse #initial guess
-    omega_X = np.true_divide(1,np.power(sigma_X,2))
-    omega_Y = np.true_divide(1, np.power(sigma_Y,2))
-    alpha=np.sqrt(omega_X*omega_Y)
-    b_save = np.zeros(N_itermax+1) #vector to save b iterations in
-    b_save[0]=b
-
-    for i in np.arange(N_itermax):
-        W=omega_X*omega_Y/(omega_X+b*b*omega_Y-2*b*r*alpha)
-
-        X_bar=np.sum(W*X)/np.sum(W)
-        Y_bar=np.sum(W*Y)/np.sum(W)
-
-        U=X-X_bar
-        V=Y-Y_bar
-
-        beta=W*(U/omega_Y+b*V/omega_X-(b*U+V)*r/alpha)
-
-        b=sum(W*beta*V)/sum(W*beta*U)
-        b_save[i+1]=b
-        if np.abs((b_save[i+1]-b_save[i])/b_save[i+1]) < tol:
-            break
-
-    a=Y_bar-b*X_bar
-    x=X_bar+beta
-    y=Y_bar+b*beta
-    x_bar=sum(W*x)/sum(W)
-    y_bar=sum(W*y)/sum(W)
-    u=x-x_bar
-    #%v=y-y_bar
-    sigma_b=np.sqrt(1/sum(W*u*u))
-    sigma_a=np.sqrt(1./sum(W)+x_bar*x_bar*sigma_b*sigma_b)
-    return (a, b, sigma_a, sigma_b, b_save)
 
 def MakeIV(output, ChangePoints, sweepedChannel):
     approach = 'mean'
@@ -253,9 +257,67 @@ def MakeIV(output, ChangePoints, sweepedChannel):
         All['Currents'] = currents
     return All
 
-def FitIV(IVData, x='i1', y='v1', iv=0):
-    plot = 1
-    sigma_v = 1e-12*np.ones(len(['Voltage']))
+
+def ExpFunc(x, a, b, c):
+    return a * np.exp(-b * x) + c
+
+def MakeExponentialFit(xdata,ydata):
+    try:
+        popt, pcov = curve_fit(ExpFunc, xdata, ydata)
+        return (popt, pcov)
+    except RuntimeError:
+        popt = (0,0,0)
+        pcov = 0
+        return (popt, pcov)
+
+def YorkFit(X, Y, sigma_X, sigma_Y, r=0):
+    N_itermax=10 #maximum number of interations
+    tol=1e-15 #relative tolerance to stop at
+    N = len(X)
+    temp = np.matrix([X, np.ones(N)])
+    #make initial guess at b using linear squares
+
+    tmp = np.matrix(Y)*lin.pinv(temp)
+    b_lse = np.array(tmp)[0][0]
+    #a_lse=tmp(2);
+    b = b_lse #initial guess
+    omega_X = np.true_divide(1,np.power(sigma_X,2))
+    omega_Y = np.true_divide(1, np.power(sigma_Y,2))
+    alpha=np.sqrt(omega_X*omega_Y)
+    b_save = np.zeros(N_itermax+1) #vector to save b iterations in
+    b_save[0]=b
+
+    for i in np.arange(N_itermax):
+        W=omega_X*omega_Y/(omega_X+b*b*omega_Y-2*b*r*alpha)
+
+        X_bar=np.sum(W*X)/np.sum(W)
+        Y_bar=np.sum(W*Y)/np.sum(W)
+
+        U=X-X_bar
+        V=Y-Y_bar
+
+        beta=W*(U/omega_Y+b*V/omega_X-(b*U+V)*r/alpha)
+
+        b=sum(W*beta*V)/sum(W*beta*U)
+        b_save[i+1]=b
+        if np.abs((b_save[i+1]-b_save[i])/b_save[i+1]) < tol:
+            break
+
+    a=Y_bar-b*X_bar
+    x=X_bar+beta
+    y=Y_bar+b*beta
+    x_bar=sum(W*x)/sum(W)
+    y_bar=sum(W*y)/sum(W)
+    u=x-x_bar
+    #%v=y-y_bar
+    sigma_b=np.sqrt(1/sum(W*u*u))
+    sigma_a=np.sqrt(1./sum(W)+x_bar*x_bar*sigma_b*sigma_b)
+    return (a, b, sigma_a, sigma_b, b_save)
+
+
+
+def FitIV(IVData, plot=1, x='i1', y='v1', iv=0):
+    sigma_v = 1e-12*np.ones(len(IVData['Voltage']))
     (a, b, sigma_a, sigma_b, b_save) = YorkFit(IVData['Voltage'], IVData['Mean'], sigma_v, IVData['STD'])
     x_fit = np.linspace(min(IVData['Voltage']), max(IVData['Voltage']), 1000)
     y_fit = scipy.polyval([b,a], x_fit)
@@ -318,8 +380,7 @@ def Reshape1DTo2D(inputarray, buffersize):
     print('Voltages:' + str(i1.shape))
     return out
 
-def CalculatePoreSize(G, L, s):
-    return (G+np.sqrt(G*(G+16*L*s/np.pi)))/(2*s)
+
 
 def OpenFile(filename = ''):
     if filename == '':
@@ -472,18 +533,6 @@ def ExportIVData(self):
     Data['IVFit']=self.FitValues
     Data['IVData']=self.IVData
     scipy.io.savemat(self.matfilename + '_IVData.mat', Data, appendmat=True)
-
-def MakePSD(input, samplerate, fig):
-    f, Pxx_den = scipy.signal.periodogram(input, samplerate)
-    #f, Pxx_den = scipy.signal.welch(input, samplerate, nperseg=10*256, scaling='spectrum')
-
-    print(f)
-    f = np.delete(f, 0)
-    Pxx_den = np.delete(Pxx_den, 0)
-    print(f)
-    fig.setLogMode(x=True, y=True)
-    fig.plot(f, Pxx_den*1e24, pen='k')
-    return (f,Pxx_den)
 
 
 
@@ -653,53 +702,7 @@ def MatplotLibCurrentSignal(self):
     plt.savefig(self.matfilename + str(self.p1.viewRange()[0][0]) + '_Figure.eps')
     #plt.show()
 
-def PlotSingle(self):
-    self.p1.clear()
-    self.transverseAxis.clear()
-    self.p1.plotItem.hideAxis('right')
-    self.voltagepl.plotItem.hideAxis('right')
-    self.transverseAxisVoltage.clear()
-    self.p3.clear()
-    self.voltagepl.clear()
 
-    if self.ui.ndChannel.isChecked():
-        temp_i = self.out['i2']
-        temp_v = self.out['v2']
-        self.p1.setLabel('left', text='Transverse Current', units='A')
-        self.voltagepl.setLabel('left', text='Transverse Voltage', units='V')
-    else:        
-        temp_i = np.array(self.out['i1'])
-        temp_v = self.out['v1']
-        self.p1.setLabel('left', text='Ionic Current', units='A')
-        self.voltagepl.setLabel('left', text='Ionic Voltage', units='V')
-
-    self.p1.setLabel('bottom', text='Time', units='s')
-    print('self.t:' + str(self.t.shape) + ', temp_i:'+str(temp_i.shape))
-    self.voltagepl.setLabel('bottom', text='Time', units='s')
-    self.p1.plot(self.t, temp_i, pen='b')
-    aphy, aphx = np.histogram(temp_i, bins=int(np.round(len(temp_i) / 1000)))
-
-    aphhist = pg.PlotCurveItem(aphx, aphy, stepMode=True, fillLevel=0, brush='b')
-    self.p3.addItem(aphhist)
-
-    if self.out['type'] == 'ChimeraRaw':
-        self.voltagepl.addLine(y=self.out['v1'], pen='b')
-    else:
-        self.voltagepl.plot(self.t, temp_v, pen='b')
-
-    self.psdplot.clear()
-    print('Samplerate: ' + str(self.out['samplerate']))
-    MakePSD(temp_i, self.out['samplerate'], self.psdplot)
-    siSamplerate = pg.siScale(self.out['samplerate'])
-    siSTD = pg.siScale(np.std(temp_i))
-
-    self.ui.SampleRateLabel.setText(
-        'Samplerate: ' + str(self.out['samplerate'] * siSamplerate[0]) + siSamplerate[1] + 'Hz')
-    self.ui.STDLabel.setText('STD: ' + str(siSTD[0] * np.std(temp_i)) + siSTD[1] + 'A')
-
-    self.voltagepl.enableAutoRange(axis='y')
-    self.p1.enableAutoRange(axis='y')
-    
 
 def SaveToHDF5(self):
     f = h5py.File(self.matfilename + '_OriginalDB.hdf5', "w")

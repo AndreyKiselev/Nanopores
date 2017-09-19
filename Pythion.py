@@ -33,6 +33,7 @@ from timeit import default_timer as timer #for time measurements
 ########written by developers########
 import UsefulFunctions as uf #module for data processing
 from UserInterface import * #loading pyqt5 designer generated graphical visualisation for program
+from abfheader import * #code for proccessing some binaries
 from CUSUMV2 import detect_cusum #CUSUM algorithm
 from PoreSizer import * #poresizer
 from batchinfo import * #for visuallization
@@ -82,7 +83,7 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.makeIVButton.clicked.connect(self.makeIV)
 
         ##########Pore Size -> Settings####  
-        self.ui.concentrationValue.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
+        self.ui.saltbulkconductivity.valueChanged.connect(self.UpdateIV) # UpdateIV if changed. Works before any button pressed!
         self.ui.porelengthValue.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
 
         ##########Pore Size -> Manual calculation####           
@@ -134,9 +135,9 @@ class GUIForm(QtGui.QMainWindow):
         self.transverseAxisEvent = pg.ViewBox()
 
         ########Signal plot ##########################
-        self.p1 = self.ui.signalplot
+        self.p1 = self.ui.signalplot #current vs time
         self.p1.enableAutoRange(axis = 'y')
-        self.p1.disableAutoRange(axis = 'x')
+        self.p1.enableAutoRange(axis='x')
         self.p1.setLabel('top', text = 'Signal plot')
         self.p1.setDownsampling(ds = True, auto = True, mode = 'subsample')
         self.p1.setClipToView(True)
@@ -221,7 +222,7 @@ class GUIForm(QtGui.QMainWindow):
 
         ##########Power spectrum density plot##############
         self.psdplot = self.ui.powerSpecPlot
-        self.psdplot.setLabel('left', 'PSD', units='pA^2/Hz')
+        self.psdplot.setLabel('left', 'PSD', units='(10^(-24))*A^2/Hz')
         self.psdplot.setLabel('bottom', 'Frequency', units='Hz')
         self.psdplot.setLabel('top', text='Power Spectrum Density')        
 
@@ -229,17 +230,29 @@ class GUIForm(QtGui.QMainWindow):
         
         
         ##########Setting up values for pore sizing#########
-        self.ui.conductanceText.setText('Conductance: ')
-        self.ui.resistanceText.setText('Resistance: ')
-        self.ui.poresizeOutput.setText('Pore Size: ')
+        
         self.useCustomConductance = 0
         self.conductance = 1e-9
-        self.ui.porelengthValue.setOpts(value=0.7E-9, suffix='m', siPrefix=True, dec=True, step=1e-9, minStep=1e-9)
-        self.ui.customCurrent.setOpts(value=10e-9, suffix='A', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
+        self.ui.resistanceText.setText('Resistance (1/G): ' + pg.siFormat(1/self.conductance, precision=5, suffix='Ohm', space=True, error=None, minVal=1e-25, allowUnicode=True))
+        self.ui.conductanceText.setText('Conductance (G): ' + pg.siFormat(self.conductance, precision=5, suffix='S', space=True, error=None, minVal=1e-25, allowUnicode=True))
+        self.ui.saltbulkconductivity.setOpts(value=10.5, suffix='S/m', siPrefix=True, decimals=6, step=1e-2)
+        self.ui.porelengthValue.setOpts(value=0.7E-9, suffix='m', siPrefix=True, decimals=6, step=1e-11)
+        self.ui.customCurrent.setOpts(value=10e-9, suffix='A', siPrefix=True, decimals=6, step=1e-10)
         self.ui.customVoltage.setOpts(value=500e-3, suffix='V', siPrefix=True, dec=True, step=10e-3, minStep=10e-3)
         self.ui.conductanceOutput.setText(pg.siFormat(10e-9/500e-3, precision=5, suffix='S', space=True, error=None, allowUnicode=True))
+        self.ui.poresizeOutput.setText('Pore Size :' )
 
-
+        #####Inserting pore size formula
+        self.ui.PoreSizeformula.setBackground('w')
+        self.PoreForm = self.ui.PoreSizeformula
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        self.formula = ndimage.imread(dir_path + os.sep + "poresizeformula.png")
+        self.formula = np.rot90(self.formula,-1)
+        self.formula = pg.ImageItem(self.formula)
+        self.PoreForm.addItem(self.formula)
+#        self.PoreForm.setAspectLocked(True)
+        self.PoreForm.hideAxis('bottom')
+        self.PoreForm.hideAxis('left')
 
         ##########Setting up coefficients for filtering and event decting for 1st channel######
         self.ui.LP_a.setOpts(value=0.999, suffix='', siPrefix=False, dec=True, step=1e-3, minStep=1e-4)
@@ -282,6 +295,20 @@ class GUIForm(QtGui.QMainWindow):
         self.sdf = pd.DataFrame(columns = ['fn','color','deli','frac',
             'dwell','dt','startpoints','endpoints'])
 
+    
+    def UpdateIV(self): #Updating conductance and Pore Size data! Start before any button pressed
+        
+        if self.useCustomConductance:
+            self.ui.conductanceOutput.setText(pg.siFormat(self.ui.customCurrent.value()/self.ui.customVoltage.value(), precision=5, suffix='S', space=True, error=None, allowUnicode=True))
+            valuetoupdate=np.float(self.ui.customCurrent.value()/self.ui.customVoltage.value())
+        else:
+            valuetoupdate=self.conductance
+        if self.ui.saltbulkconductivity.value():
+            size=uf.CalculatePoreSize(valuetoupdate, self.ui.porelengthValue.value(), self.ui.saltbulkconductivity.value())
+            print('Size = '+ str(size))
+            self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=5, suffix='m', space=True, error=None, minVal=1e-25, allowUnicode=True))
+
+
     def getfile(self): #load button pressed
         try:
             ######## attempt to open dialog from most recent directory########
@@ -295,37 +322,39 @@ class GUIForm(QtGui.QMainWindow):
             pass
 
 
-    def Load(self, loadandplot = True): #file loader
+    def Load(self, loadandplot = True): #file loader works with getfile()
 
         print('File Adress: {}'.format(self.datafilename)) #print chosen file adress on command line
 
         self.batchinfo = pd.DataFrame(columns = list(['cutstart', 'cutend']))
 
-        #####Event plot cutting off Pyth-ion logo, inserting Event plot
+        #####Event plot cutting off Pyth-ion logo, inserting Event plot and its parameters
         self.p3.clear()
         self.p3.setLabel('top', text='Event plot')
         self.p3.setLabel('bottom', text='Current', units='A', unitprefix = 'n')
         self.p3.setLabel('left', text='', units = 'Counts')
         self.p3.setAspectLocked(False)
-        self.p1.enableAutoRange(axis='x')
 
+        #####establish initial parameters for new file  
+        self.ui.eventinfolabel.clear() # clearing Dwell time from previous
+        self.ui.eventnumberentry.setText(str(0)) #nulify Event number     
+        self.hasbaselinebeenset=0 #no baseline calc done for new file
+        self.ui.AxopatchGroup.setVisible(0) #two channels not available at start
+
+
+        self.ui.filelabel.setText('...' + str(self.datafilename[-45:])) #print path to downloaded file
+        self.LPfiltercutoff = np.float64(self.ui.LPentry.text())*1000 #filter cutoff from input (Hz)
         
-        self.ui.eventinfolabel.clear()
-        self.totalplotpoints=len(self.p2.data)
-        self.ui.eventnumberentry.setText(str(0))
-        self.hasbaselinebeenset=0
-        self.threshold=np.float64(self.ui.thresholdentry.text())*10**-9
-        self.ui.filelabel.setText(self.datafilename)
-        self.LPfiltercutoff = np.float64(self.ui.LPentry.text())*1000
-       
-        print()
+        
 
         ########Importing Axopatch Data######################
         if str(os.path.splitext(self.datafilename)[1])=='.dat':
             print('Loading Axopatch Data')
+            ds_factor = 1 #Scaling factor for time
             self.out=uf.ImportAxopatchData(self.datafilename)
             self.matfilename = str(os.path.splitext(self.datafilename)[0])
             self.outputsamplerate=self.out['samplerate']
+            print('samplrt='+ str(self.outputsamplerate))
             self.ui.outputsamplerateentry.setText(str(self.out['samplerate']/1000))
             if self.out['graphene']:
                 self.ui.AxopatchGroup.setVisible(1)
@@ -337,42 +366,41 @@ class GUIForm(QtGui.QMainWindow):
             print('Loading Chimera File')
             self.out = uf.ImportChimeraData(self.datafilename)
             self.matfilename = str(os.path.splitext(self.datafilename)[0])
-            if self.out['type'] == 'ChimeraNotRaw':
+            if self.out['type']  == 'ChimeraNotRaw':
+                ds_factor = 1 #Scaling factor for time
                 self.data = self.out['i1']
-                print(str(self.data.shape))
+                print('chimera not raw')
+                print('Amount of points before filtering:' + str(self.data.shape)+ ' Points')
+                print('Samplerate before filtering:' + str(self.out['samplerate'])+ 'Hz')
                 self.vdata = self.out['v1']
                 self.ui.outputsamplerateentry.setText(str(self.out['samplerate']/1000))
             else:
+                print('chimera raw')
+                print('Amount of points before filtering:' + str(self.out['i1raw'].shape))
+                print('Samplerate before filtering:' + str(self.out['samplerate']))
                 s=timer()
-                dsr = self.LPfiltercutoff*4 # desired sample rate
-                ds_factor = int(self.out['samplerate']/(dsr))  #down sampling factor
+                ds_factor = self.out['samplerate']/self.LPfiltercutoff  #down sampling factor
                 if ds_factor>1:
-                    ds_sig = scipy.signal.resample(self.out['i1raw'], int(len(self.out['i1raw'])/ds_factor))
                     Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']), 4)  # [0,1] nyquist frequency
-                    b, a = signal.bessel(4, Wn, btype='low', analog=False)
-                    self.out['i1'] = signal.filtfilt(b, a, ds_sig)
-                    self.ui.outputsamplerateentry.setText(str(self.out['samplerate'] / ds_factor / 1000))
+                    b, a = signal.bessel(4, Wn, btype='low', analog=False) #4-th order bessel filter
+                    Filt_sig = signal.filtfilt(b, a, self.out['i1raw'])
+                    self.out['i1'] = scipy.signal.resample(Filt_sig, int(len(self.out['i1raw'])/ds_factor))
+                    self.out['samplerate'] = self.out['samplerate'] / ds_factor
+                    print('Samplerate after filtering:' + str(self.out['samplerate']))
+                    self.ui.outputsamplerateentry.setText(str(self.out['samplerate'] / 1000))
                 else:
-                    Wn = round(2*self.LPfiltercutoff/(self.out['samplerate']), 4)  # [0,1] nyquist frequency
-                    b, a = signal.bessel(4, Wn, btype='low', analog=False)
-                    self.out['i1'] = signal.filtfilt(b, a, self.out['i1raw'])
-                    self.p1.setDownsampling(ds=True, auto=True, mode='subsample')
-                    self.p1.setClipToView(True)
+                    print('Warning!!! Low Pass Filter value was inserted incorrect! LPF must be less than Output Samplerate')
+                    
 
                 self.data = self.out['i1']
                 self.vdata = np.ones(len(self.data)) * self.out['v1']
                 e=timer()
-                print('Chimera Loading:' + str(e-s) + ' sec.')
+                print('Chimera Loading: ' + 'time reqired: ' + str(e-s) + ' sec.')
     
-        self.t = np.arange(len(self.out['i1']))
-        self.t = self.t/self.out['samplerate']
-       # if str(os.path.splitext(self.datafilename)[1])=='.log':
-        #    self.t.shape = [self.t.shape[1],]
-
-        #self.ui.label_2.setText('Output Samplerate ' + str(pg.siScale(np.float(self.outputsamplerate))[1]))
-
-        if loadandplot == True:
-            self.Plot()
+        self.t = np.arange(len(self.out['i1']))  # Setting up time series
+        print('Length of experiment = '+str(len(self.out['i1'])/self.out['samplerate'] )+ ' s')
+        self.t = self.t/(self.out['samplerate'])
+        self.Plot()
 
     def Plot(self):
         # if self.hasbaselinebeenset==0:
@@ -387,12 +415,38 @@ class GUIForm(QtGui.QMainWindow):
             else:
                 self.sig = 'i1'
                 self.sig2 = 'i2'
-        print(self.out[self.sig].shape)
+        
         if not self.ui.actionDon_t_Plot_if_slow.isChecked():
             if self.ui.plotBoth.isChecked():
                 uf.DoublePlot(self)
             else:
                 uf.PlotSingle(self)
+
+    def makeIV(self):
+
+        if self.yaxisIV == 0:
+            xlab = 'i1'
+        if self.xaxisIV == 0:
+            ylab = 'v1'
+
+        if self.yaxisIV == 1:
+            xlab = 'i2'
+        if self.xaxisIV == 1:
+            ylab = 'v2'
+
+        self.cutplot.clear()
+        (ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out)
+        #(ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out) #(position of points where diff(out[i])=0, v1/v2)
+        if ChangePoints is not 0:
+            # Make IV
+            print('till here works fine')
+            self.IVData = uf.MakeIV(self.out, ChangePoints, sweepedChannel)
+            # Fit IV
+            self.ivplota.clear()
+            (self.FitValues, iv) = uf.FitIV(self.IVData['i1'], x=xlab, y=ylab, iv=self.ivplota)
+            self.conductance = self.FitValues['Slope']
+            self.UpdateIV()
+            # Update Conductance
 
     def SaveIVData(self):
         uf.ExportIVData(self)
@@ -989,42 +1043,9 @@ class GUIForm(QtGui.QMainWindow):
         self.ps = PoreSizer()
         self.ps.show()
 
-    def makeIV(self):
-        if self.yaxisIV == 0:
-            xlab = 'i1'
-        if self.yaxisIV == 1:
-            xlab = 'i2'
-        if self.xaxisIV == 0:
-            ylab = 'v1'
-        if self.xaxisIV == 1:
-            ylab = 'v2'
-        self.cutplot.clear()
-        (ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out)
-        if ChangePoints is not 0:
-            # Make IV
-            self.IVData = uf.MakeIV(self.out, ChangePoints, sweepedChannel)
-            # Fit IV
-            self.ivplota.clear()
-            (self.FitValues, iv) = uf.FitIV(self.IVData['i1'], x=xlab, y=ylab, iv=self.ivplota)
-            self.conductance = self.FitValues['Slope']
-            self.UpdateIV()
-            # Update Conductance
+    
 
-    def UpdateIV(self):
-        self.ui.conductanceText.setText('Conductance: ' + pg.siFormat(self.conductance, precision=5, suffix='S', space=True, error=None, minVal=1e-25, allowUnicode=True))
-        self.ui.resistanceText.setText('Resistance: ' + pg.siFormat(1/self.conductance, precision=5, suffix='Ohm', space=True, error=None, minVal=1e-25, allowUnicode=True))
-        if self.useCustomConductance:
-            self.ui.conductanceOutput.setText(pg.siFormat(self.ui.customCurrent.value()/self.ui.customVoltage.value(), precision=5, suffix='S', space=True, error=None, allowUnicode=True))
-            valuetoupdate=np.float(self.ui.customCurrent.value()/self.ui.customVoltage.value())
-        else:
-            valuetoupdate=self.conductance
-        print(self.ui.porelengthValue.value())
-        print(valuetoupdate)
-        print(self.ui.concentrationValue.value())
-        if self.ui.concentrationValue.value():
-            size=uf.CalculatePoreSize(valuetoupdate, self.ui.porelengthValue.value(), self.ui.concentrationValue.value())
-            self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=5, suffix='m', space=True, error=None, minVal=1e-25, allowUnicode=True))
-
+    
     def customCond(self):
         if self.ui.groupBox_5.isChecked():
             self.useCustomConductance = 1
