@@ -9,7 +9,7 @@ import h5py #for huge amounts of numerical data in binaries
 import os #pathname manipulations
 import time #time access and conversions
 import platform #what system we have
-from tabulate import tabulate #for making tables
+
 from collections import OrderedDict #for making ordered dictionaries
 from openpyxl import Workbook #creation Exel file
 from openpyxl import load_workbook #loading exel from existing file
