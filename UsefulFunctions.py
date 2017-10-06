@@ -144,118 +144,107 @@ def MakePSD(input, samplerate, fig):
     return (f,Pxx_den)
 
 
-def CutDataIntoVoltageSegments(output):
+def CutDataIntoVoltageSegments(output, x, y, extractedSegments, delay=0.7, plotSegments = 1):
     sweepedChannel = ''
-    if output['type'] == 'ChimeraNotRaw' or (output['type'] == 'Axopatch' and not output['graphene']):
-        ChangePoints = np.where(np.diff(output['v1']))[0]
-        sweepedChannel = 'v1'
-        if len(ChangePoints) is 0:
-            print('No voltage sweeps in this file')
-            return (0,0)
-    elif (output['type'] == 'Axopatch' and output['graphene']):
-        ChangePoints = np.where(np.diff(output['v1']))[0]
-        sweepedChannel = 'v1'
-        if len(ChangePoints) is 0:
-            ChangePoints = np.where(np.diff(output['v2']))[0]
-            if len(ChangePoints) is 0:
-                print('No voltage sweeps in this file')
-                return (0,0)
-            else:
-                sweepedChannel = 'v2'
-    print('Cutting into Segments...\n{} change points detected in channel {}...'.format(len(ChangePoints), sweepedChannel))
-    return (ChangePoints, sweepedChannel)
-
-def MakeIV(output, ChangePoints, sweepedChannel):
-    approach = 'mean'
-    delay = 0.7
-    if ChangePoints is 0:
-        return 0
-
-    if output['graphene']:
-        currents = ['i1', 'i2']
+    if output['type'] == 'ChimeraNotRaw':
+        current = output['i1']
+        voltage = output['v1']
+        samplerate = output['samplerate']
+    elif output['type'] == 'Axopatch' and x == 'i1' and y == 'v1':
+        current = output['i1']
+        voltage = output['v1']
+        print('i1,v1')
+        samplerate = output['samplerate']
+    elif output['type'] == 'Axopatch' and output['graphene'] and x == 'i2' and y == 'v2':
+        current = output['i2']
+        voltage = output['v2']
+        samplerate = output['samplerate']
+        print('i2,v2')
+    elif output['type'] == 'Axopatch' and output['graphene'] and x == 'i2' and y == 'v1':
+        current = output['i2']
+        voltage = output['v1']
+        samplerate = output['samplerate']
+        print('i2,v1')
+    elif output['type'] == 'Axopatch' and output['graphene'] and x == 'i1' and y == 'v2':
+        current = output['i1']
+        voltage = output['v2']
+        samplerate = output['samplerate']
+        print('i1,v2')
     else:
-        currents = ['i1']
+        print('File doesn''t contain any IV data on the selected channel...')
+        return (0, 0)
 
-    Values = output[sweepedChannel][ChangePoints]
-    Values = np.append(Values, output[sweepedChannel][-1])
-    delayinpoints = np.int64(delay * output['samplerate'])
+    time=np.float32(np.arange(0, len(current))/samplerate)
+    delayinpoints = int(delay * samplerate)
+    diffVoltages = np.diff(voltage)
+    VoltageChangeIndexes = diffVoltages
+    ChangePoints = np.where(diffVoltages)[0]
+    Values = voltage[ChangePoints]
+    Values = np.append(Values, voltage[-1])
+    print('Cutting into Segments\n{} change points detected...'.format(len(ChangePoints)))
+    if len(ChangePoints) is 0:
+        print('Can\'t segment the file. It doesn\'t contain any voltage switches')
+        return (0,0)
+
     #   Store All Data
-    All={}
-    for current in currents:
-        Item = {}
-        l = len(Values)
-        Item['Voltage'] = np.zeros(l)
-        Item['StartPoint'] = np.zeros(l,dtype=np.uint64)
-        Item['EndPoint'] = np.zeros(l, dtype=np.uint64)
-        Item['Mean'] = np.zeros(l)
-        Item['STD'] = np.zeros(l)
-        Item['SweepedChannel'] = sweepedChannel
-        Item['YorkFitValues'] = {}
-        Item['ExponentialFitValues'] = np.zeros((3, l))
-        Item['ExponentialFitSTD'] = np.zeros((3, l))
-        # First item
-        Item['Voltage'][0] = Values[0]
-        trace = output[current][0 + delayinpoints:ChangePoints[0]]
-        trace = trace[np.array(1-np.isnan(trace), dtype = bool)]
-        Item['StartPoint'][0] = 0 + delayinpoints
-        Item['EndPoint'][0] = ChangePoints[0]
-        Item['Mean'][0] = np.mean(trace)
-        Item['STD'][0] = np.std(trace)
-        (popt, pcov) = MakeExponentialFit(np.arange(len(trace))/output['samplerate'], trace)
-        if popt[0]:
-            Item['ExponentialFitValues'][:, 0] = popt
-            Item['ExponentialFitSTD'][:, 0] = np.sqrt(np.diag(pcov))
-        else:
-            print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][0]))
-            Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-            Item['ExponentialFitSTD'][:, 0] = np.std(trace)
+    AllDataList = []
+    # First
+    Item={}
+    Item['Voltage'] = Values[0]
+    Item['CurrentTrace'] = current[0:ChangePoints[0]]
+    AllDataList.append(Item)
+    for i in range(1, len(Values) - 1):
+        Item={}
+        Item['CurrentTrace'] = current[ChangePoints[i - 1] + delayinpoints:ChangePoints[i]]
+        Item['Voltage']=Values[i]
+        AllDataList.append(Item)
+    # Last
+    Item = {}
+    Item['CurrentTrace'] = current[ChangePoints[len(ChangePoints) - 1] + delayinpoints:len(current) - 1]
+    Item['Voltage']= Values[len(Values) - 1]
+    AllDataList.append(Item)
+    if plotSegments:
 
+        #extractedSegments = pg.PlotWidget(title="Extracted Parts")
+        extractedSegments.plot(time, current, pen='b', linewidth = 2000)
+        extractedSegments.setLabel('left', text='Current', units='A')
+        extractedSegments.setLabel('bottom', text='Time', units='s')
+        # First
+        extractedSegments.plot(np.arange(0,ChangePoints[0])/samplerate, current[0:ChangePoints[0]], pen='r')
+        #Loop
         for i in range(1, len(Values) - 1):
-            trace = output[current][ChangePoints[i - 1]+delayinpoints:ChangePoints[i]]
-            Item['Voltage'][i] = Values[i]
-            Item['StartPoint'][i] = ChangePoints[i - 1]+delayinpoints
-            Item['EndPoint'][i] = ChangePoints[i]
-            Item['Mean'][i] = np.mean(trace)
-            Item['STD'][i] = np.std(trace)
-            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
-            if popt[0]:
-                Item['ExponentialFitValues'][:, i] = popt
-                Item['ExponentialFitSTD'][:, i] = np.sqrt(np.diag(pcov))
-            else:
-                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][i]))
-                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
+            extractedSegments.plot(np.arange(ChangePoints[i - 1] + delayinpoints, ChangePoints[i]) / samplerate, current[ChangePoints[i - 1] + delayinpoints:ChangePoints[i]], pen='r')
+        #Last
+            extractedSegments.plot(np.arange(ChangePoints[len(ChangePoints) - 1] + delayinpoints, len(current) - 1 )/samplerate, current[ChangePoints[len(ChangePoints) - 1] + delayinpoints:len(current) - 1], pen='r')
+    else:
+        extractedSegments=0
+    return (AllDataList, extractedSegments)
 
-        # Last
-        if 1:
-            trace = output[current][ChangePoints[len(ChangePoints) - 1] + delayinpoints : len(output[current]) - 1]
-            Item['Voltage'][-1:] = Values[len(Values) - 1]
-            Item['StartPoint'][-1:] = ChangePoints[len(ChangePoints) - 1]+delayinpoints
-            Item['EndPoint'][-1:] = len(output[current]) - 1
-            Item['Mean'][-1:] = np.mean(trace)
-            Item['STD'][-1:] = np.std(trace)
-            (popt, pcov) = MakeExponentialFit(np.arange(len(trace)) / output['samplerate'], trace)
-            if popt[0]:
-                Item['ExponentialFitValues'][:, -1] = popt
-                Item['ExponentialFitSTD'][:, -1] = np.sqrt(np.diag(pcov))
-            else:
-                print('Exponential Fit on for ' + current + ' failed at V=' + str(Item['Voltage'][-1:]))
-                Item['ExponentialFitValues'][:, 0] = np.mean(trace)
-                Item['ExponentialFitSTD'][:, 0] = np.std(trace)
-
-        sigma_v = 1e-12 * np.ones(len(Item['Voltage']))
-        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['Mean'], sigma_v, Item['STD'])
-        x_fit = np.linspace(min(Item['Voltage']), max(Item['Voltage']), 1000)
-        y_fit = scipy.polyval([b, a], x_fit)
-        Item['YorkFitValues'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
-                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
-        (a, b, sigma_a, sigma_b, b_save) = YorkFit(Item['Voltage'], Item['ExponentialFitValues'][2,:], sigma_v, Item['ExponentialFitSTD'][2,:])
-        y_fit = scipy.polyval([b, a], x_fit)
-        Item['YorkFitValuesExponential'] = {'x_fit': x_fit, 'y_fit': y_fit, 'Yintercept': a, 'Slope': b, 'Sigma_Yintercept': sigma_a,
-                         'Sigma_Slope': sigma_b, 'Parameter': b_save}
-        All[current] = Item
-        All['Currents'] = currents
-    return All
+def MakeIV(CutData, plot=1):
+    l=len(CutData)
+    IVData={}
+    IVData['Voltage'] = np.zeros(l)
+    IVData['Mean'] = np.zeros(l)
+    IVData['STD'] = np.zeros(l)
+    count=0
+    for i in CutData:
+        #print('Voltage: ' + str(i['Voltage']) + ', length: ' + str(len(i['CurrentTrace'])))
+        IVData['Voltage'][count] = np.float32(i['Voltage'])
+        IVData['Mean'][count] = np.mean(i['CurrentTrace'])
+        IVData['STD'][count] = np.std(i['CurrentTrace'])
+        count+=1
+    if plot:
+        spacing=np.sort(IVData['Voltage'])
+        iv = pg.PlotWidget(title='Current-Voltage Plot')
+        err = pg.ErrorBarItem(x=IVData['Voltage'], y=IVData['Mean'], top=IVData['STD'], bottom=IVData['STD'], beam=((spacing[1]-spacing[0]))/2)
+        iv.addItem(err)
+        iv.plot(IVData['Voltage'], IVData['Mean'], symbol='o', pen=None)
+        iv.setLabel('left', text='Current', units='A')
+        iv.setLabel('bottom', text='Voltage', units='V')
+        print('raboraet')
+    else:
+        iv=0
+    return (IVData, iv)
 
 
 def ExpFunc(x, a, b, c):
@@ -734,8 +723,8 @@ def SaveToHDF5(self):
 def RecursiveLowPass(signal, coeff):
     Ni = len(signal)
     RoughEventLocations = []
-    ml = np.zeros((Ni, 1))
-    vl = np.zeros((Ni, 1))
+    ml = np.zeros((Ni, 1))#mean
+    vl = np.zeros((Ni, 1))#sqrt(STD)
     ml[0] = np.mean(signal)
     vl[0] = np.var(signal)
     i = 0
@@ -774,9 +763,13 @@ def RecursiveLowPass(signal, coeff):
     return np.array(RoughEventLocations)
 
 def RecursiveLowPassFast(signal, coeff):
-    ml = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], signal)
+    ml = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], signal) #mean
     vl = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], np.square(signal - ml))
     sl = ml - coeff['S'] * np.sqrt(vl)
+    
+    #self.p1.plot(np.arange(int(zero_points -2* Delay_back_points), int(zero_points),1), sl)
+
+    #self.p1.plot(np.arange(int(zero_points -2* Delay_back_points), int(zero_points),1), sl, pen=pg.mkPen(color=(173, 27, 183), width=3))
     Ni = len(signal)
     points = np.array(np.where(signal<=sl)[0])
     to_pop=np.array([])
@@ -817,10 +810,16 @@ def RecursiveLowPassFast(signal, coeff):
 
     return np.array(RoughEventLocations)
 
-def RecursiveLowPassFastUp(signal, coeff):
-    ml = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], signal)
-    vl = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], np.square(signal - ml))
+def RecursiveLowPassFastUp(signal, coeff, self, zero_points, Delay_back_points, backPoint_coef):
+    ml = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], self.out['i1'])
+    vl = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], np.square(self.out['i1'] - ml))
+    ml = ml[int(zero_points -backPoint_coef* Delay_back_points):int(zero_points)]
+    vl = vl[int(zero_points -backPoint_coef* Delay_back_points):int(zero_points)]
+    #ml = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], signal)
+    #vl = scipy.signal.lfilter([1 - coeff['a'], 0], [1, -coeff['a']], np.square(signal - ml))
     sl = ml + coeff['S'] * np.sqrt(vl)
+    self.p1.plot(np.arange(int(zero_points -backPoint_coef* Delay_back_points), int(zero_points),1)/self.out['samplerate'], sl, pen=pg.mkPen(color=(173, 27, 183), width=3))
+    #self.p1.plot(np.arange(int(zero_points -2* Delay_back_points), int(zero_points),1)/self.out['samplerate'], sl, pen=pg.mkPen(color=(173, 27, 183), width=3))
     Ni = len(signal)
     points = np.array(np.where(signal>=sl)[0])
     to_pop=np.array([])
@@ -861,11 +860,17 @@ def RecursiveLowPassFastUp(signal, coeff):
     return np.array(RoughEventLocations)
 
 def AddInfoAfterRecursive(self):
+    print('Mistake was here')
+    #self.p1.plot(self.t, np.sin(self.t), pen='b')
+    #self.p1.plt.axvline(10, color='green')
+    print(self.AnalysisResults[self.sig]['RoughEventLocations'])
     startpoints = np.uint64(self.AnalysisResults[self.sig]['RoughEventLocations'][:, 0])
     endpoints = np.uint64(self.AnalysisResults[self.sig]['RoughEventLocations'][:, 1])
     localBaseline = self.AnalysisResults[self.sig]['RoughEventLocations'][:, 2]
     localVariance = self.AnalysisResults[self.sig]['RoughEventLocations'][:, 3]
-
+    print('Start points=')
+    print('type='+ str(type(startpoints[0])))
+    for (j,k) in enumerate(startpoints): print("%10.7f"% float(startpoints[j]/self.out['samplerate']))
     CusumBaseline=500
     numberofevents = len(startpoints)
     self.AnalysisResults[self.sig]['StartPoints'] = startpoints
@@ -1019,14 +1024,14 @@ def PlotEventSingle(self, clicked=[]):
     self.p3.clear()
     eventnumber = np.int(self.ui.eventnumberentry.text())
     eventbuffer = np.int(self.ui.eventbufferentry.value())
-
+    
     # plot event trace
-    self.p3.plot(self.t[startpoints[eventnumber] - eventbuffer:endpoints[eventnumber] + eventbuffer],
-                 self.out[sig][startpoints[eventnumber] - eventbuffer:endpoints[eventnumber] + eventbuffer],
+    self.p3.plot(self.t[int(startpoints[eventnumber] - eventbuffer):int(endpoints[eventnumber] + eventbuffer)],
+                 self.out[sig][int(startpoints[eventnumber] - eventbuffer):int(endpoints[eventnumber] + eventbuffer)],
                  pen='b')
 
     # plot event fit
-    self.p3.plot(self.t[startpoints[eventnumber] - eventbuffer:endpoints[eventnumber] + eventbuffer], np.concatenate((
+    self.p3.plot(self.t[int(startpoints[eventnumber] - eventbuffer):int(endpoints[eventnumber] + eventbuffer)], np.concatenate((
         np.repeat(np.array([localBaseline[eventnumber]]), eventbuffer),
         np.repeat(np.array([localBaseline[eventnumber] - self.AnalysisResults['i1']['DeltaI'][eventnumber
         ]]), endpoints[eventnumber] - startpoints[eventnumber]),
@@ -1354,44 +1359,52 @@ def creation_date(path_to_file):
             # so we'll settle for when its content was last modified.
             return stat.st_mtime
 
-def CUSUM(input, delta, h):
-    Nd = 0
-    kd = len(input)
-    krmv = len(input)
-    k0 = 0
-    k = 0
+def CUSUM(input, delta, h):   ####RECURSIVE DOUBLE CUSUM ALGORITHM  
+#input    : signal samples 
+#delta: most likely jump to be detected
+#h    : threshold for the detection test
+    Nd = 0  #detection number
+    kd = len(input) #detection time (in samples)
+    krmv = len(input) #estimated change time (in samples)
+    k0 = 0 #initial sample
+    k = 2 #current sample
     l = len(input)
-    m = np.zeros(l)
-    m[k0] = input[k0]
-    v = np.zeros(l)
-    sp = np.zeros(l)
-    Sp = np.zeros(l)
-    gp = np.zeros(l)
-    sn = np.zeros(l)
-    Sn = np.zeros(l)
-    gn = np.zeros(l)
+    m = np.zeros(l, dtype='float64')
+    m[k0] = input[k0] #mean value estimation
+    v = np.zeros(l, dtype='float64')  #variance estimation
+    sp = np.zeros(l, dtype='float64') #instantaneous log-likelihood ratio for positive jumps
+    Sp = np.zeros(l, dtype='float64') #cumulated sum for positive jumps
+    gp = np.zeros(l, dtype='float64') #decision function for positive jumps
+    sn = np.zeros(l, dtype='float64') #instantaneous log-likelihood ratio for negative jumps
+    Sn = np.zeros(l, dtype='float64') #cumulated sum for negative jumps
+    gn = np.zeros(l, dtype='float64') #decision function for negative jumps   
+    
+    
 
     while k < l:
+        ####mean and variance estimation (from initial to current sample)
         m[k] = np.mean(input[k0:k])
         v[k] = np.var(input[k0:k])
-
+        
+        ####instantaneous log-likelihood ratios
+        
         sp[k] = delta / v[k] * (input[k] - m[k] - delta / 2)
         sn[k] = -delta / v[k] * (input[k] - m[k] + delta / 2)
-
+        ####cumulated sums
         Sp[k] = Sp[k - 1] + sp[k]
         Sn[k] = Sn[k - 1] + sn[k]
+        ####decision functions
+        gp[k] = np.maximum(gp[k - 1] + sp[k], 0)
+        gn[k] = np.maximum(gn[k - 1] + sn[k], 0)
 
-        gp[k] = np.max(gp[k - 1] + sp[k], 0)
-        gn[k] = np.max(gn[k - 1] + sn[k], 0)
-
-        if gp[k] > h or gn[k] > h:
+        if gp[k] > h or gn[k] > h:  ####abrupt change detection test
             kd[Nd] = k
             kmin = int(np.where(Sn == np.min(Sn[k0:k]))[0])
             krmv[Nd] = kmin + k0 - 1
             if gp(k) > h:
                 kmin = int(np.where(Sn == np.min(Sn[k0:k]))[0])
                 krmv[Nd] = kmin + k0 - 1
-            k0 = k
+            k0 = k ####algorithm reinitialization
             m[k0] = input[k0]
             v[k0] = 0
             sp[k0] = 0
@@ -1400,8 +1413,8 @@ def CUSUM(input, delta, h):
             sn[k0] = 0
             Sn[k0] = 0
             gn[k0] = 0
-            Nd = Nd + 1
-        k += 1
+            Nd = Nd + 1  #####detection number and detection time update
+        k += 1 #current sample
 
     if Nd == 0:
         mc = np.mean(input) * np.ones(k)
@@ -1412,6 +1425,10 @@ def CUSUM(input, delta, h):
         for ii in range(1, Nd):
             mc = [mc, m[krmv[ii]] * np.ones(krmv[ii] - krmv[ii - 1])]
         mc = [mc, m(k) * np.ones(k - krmv[Nd])]
+#  Outputs :
+#             mc   : piecewise constant segmented signal
+#             kd   : detection times (in samples)
+#             krmv : estimated change times (in samples)
     return (mc, kd, krmv)
 
 def CombineEventDatabases(filename, DBfiles):

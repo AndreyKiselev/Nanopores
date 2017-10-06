@@ -9,7 +9,10 @@ import h5py #for huge amounts of numerical data in binaries
 import os #pathname manipulations
 import time #time access and conversions
 import platform #what system we have
-
+from tabulate import tabulate #for making tables
+from collections import OrderedDict #for making ordered dictionaries
+from openpyxl import Workbook #creation Exel file
+from openpyxl import load_workbook #loading exel from existing file
 
 #some stuff from scipy
 from scipy import signal
@@ -77,11 +80,15 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.IVxaxis.currentIndexChanged.connect(self.IVAxis)
         self.ui.IVyaxis.currentIndexChanged.connect(self.IVAxis)
         self.xaxisIV=self.ui.IVxaxis.currentIndex() #new variable for future work
-        self.yaxisIV=self.ui.IVyaxis.currentIndex() #new variable for future work
+        self.yaxisIV=self.ui.IVyaxis.currentIndex()
 
         ##########makeIV###################
-        self.ui.makeIVButton.clicked.connect(self.makeIV)
+        self.ui.selectMakeIV.currentIndexChanged.connect(self.selectMakeIV)
+        self.ui.makeIV.clicked.connect(self.makeIV)
 
+        ##########pingpong###################
+        self.ui.Prepingpong.clicked.connect(self.Prepingpong)
+        self.ui.pingpong.clicked.connect(self.pingpong)
         ##########Pore Size -> Settings####  
         self.ui.saltbulkconductivity.valueChanged.connect(self.UpdateIV) # UpdateIV if changed. Works before any button pressed!
         self.ui.porelengthValue.valueChanged.connect(self.UpdateIV) # UpdateIV if changed
@@ -125,7 +132,7 @@ class GUIForm(QtGui.QMainWindow):
         self.ui.cutData.setBackground('w')
         self.ui.ivplot.setBackground('w')
         self.ui.powerSpecPlot.setBackground('w')
-
+        self.ui.plot_pingpong.setBackground('w')
         #######If only one channel - channel 2 choice not available#####
         self.ui.AxopatchGroup.setVisible(0)
 
@@ -226,7 +233,10 @@ class GUIForm(QtGui.QMainWindow):
         self.psdplot.setLabel('bottom', 'Frequency', units='Hz')
         self.psdplot.setLabel('top', text='Power Spectrum Density')        
 
-              
+        ##########pingpong#########
+        self.ui.previousbutton_pingpong.clicked.connect(self.previousevent_pingpong)
+        self.ui.gobutton_pingpong.clicked.connect(self.inspectevent_pingpong)
+        self.ui.nextbutton_pingpong.clicked.connect(self.nextevent_pingpong)      
         
         
         ##########Setting up values for pore sizing#########
@@ -306,7 +316,7 @@ class GUIForm(QtGui.QMainWindow):
         if self.ui.saltbulkconductivity.value():
             size=uf.CalculatePoreSize(valuetoupdate, self.ui.porelengthValue.value(), self.ui.saltbulkconductivity.value())
             print('Size = '+ str(size))
-            self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=5, suffix='m', space=True, error=None, minVal=1e-25, allowUnicode=True))
+            self.ui.poresizeOutput.setText('Pore Size: ' + pg.siFormat(size, precision=1, suffix='m', space=True, error=None,  allowUnicode=True))
 
 
     def getfile(self): #load button pressed
@@ -396,7 +406,9 @@ class GUIForm(QtGui.QMainWindow):
                 self.vdata = np.ones(len(self.data)) * self.out['v1']
                 e=timer()
                 print('Chimera Loading: ' + 'time reqired: ' + str(e-s) + ' sec.')
-    
+        self.data = self.out['i1']
+        self.var=np.std(self.data)
+        self.outputsamplerate=self.out['samplerate']
         self.t = np.arange(len(self.out['i1']))  # Setting up time series
         print('Length of experiment = '+str(len(self.out['i1'])/self.out['samplerate'] )+ ' s')
         self.t = self.t/(self.out['samplerate'])
@@ -422,31 +434,275 @@ class GUIForm(QtGui.QMainWindow):
             else:
                 uf.PlotSingle(self)
 
+    def IVAxis(self):
+        self.xaxisIV = self.ui.IVxaxis.currentIndex()
+        self.yaxisIV = self.ui.IVyaxis.currentIndex()
+
+    def selectMakeIV(self):
+        self.selectMakeIV = self.ui.selectMakeIV.currentIndex()
+
+
     def makeIV(self):
 
         if self.yaxisIV == 0:
             xlab = 'i1'
-        if self.xaxisIV == 0:
-            ylab = 'v1'
-
         if self.yaxisIV == 1:
             xlab = 'i2'
+        if self.xaxisIV == 0:
+            ylab = 'v1'
         if self.xaxisIV == 1:
             ylab = 'v2'
-
+        print('this works')
+        if self.selectMakeIV == 0:
+            print('makeIV linear')
+        if self.selectMakeIV == 1:
+            print('makeIV exp')
         self.cutplot.clear()
-        (ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out)
-        #(ChangePoints, sweepedChannel) = uf.CutDataIntoVoltageSegments(self.out) #(position of points where diff(out[i])=0, v1/v2)
-        if ChangePoints is not 0:
-            # Make IV
-            print('till here works fine')
-            self.IVData = uf.MakeIV(self.out, ChangePoints, sweepedChannel)
-            # Fit IV
+        (AllData, a) = uf.CutDataIntoVoltageSegments(self.out, extractedSegments = self.cutplot, x=xlab, y=ylab, delay=1, plotSegments=1)
+        if AllData is not 0:
+         #    Make IV
+            (self.IVData, b) = uf.MakeIV(AllData, plot=1)
+        
+            #Fit IV
             self.ivplota.clear()
-            (self.FitValues, iv) = uf.FitIV(self.IVData['i1'], x=xlab, y=ylab, iv=self.ivplota)
+            (self.FitValues, iv) = uf.FitIV(self.IVData, x=xlab, y=ylab, iv=self.ivplota)
             self.conductance = self.FitValues['Slope']
-            self.UpdateIV()
+            #self.UpdateIV()
             # Update Conductance
+
+    def Prepingpong(self):
+        self.Search_start = np.float(self.ui.Start_search_value.text()) #seconds from the beginning of the experiment
+        self.Search_end = np.float(self.ui.End_search_value.text()) #seconds from the beginning of the experiment
+        self.Search_start_points = int(self.Search_start * self.out['samplerate']) #Points from the beginning of the experiment
+        self.Search_end_points = int(self.Search_end * self.out['samplerate']) #Points from the beginning of the experiment
+        self.Delay_back = np.float(self.ui.Delay_back_value.text()) * 1e-3 #mSeconds how far event should be from switch
+        self.Delay_back_points = int(self.Delay_back * self.out['samplerate']) #Points how far event should be from switch
+        self.Delay_back_trace = np.float(self.ui.Delay_back_trace.text()) * 1e-3 #mSeconds for examinated reion selection
+        self.Delay_back_trace_points = int(self.Delay_back_trace * self.out['samplerate']) #Points or examinated reion selection
+        self.Safety_region = np.float(self.ui.Safety_region.text()) * 1e-3 #mSeconds for examinated reion selection
+        self.Safety_region_points = int(self.Safety_region * self.out['samplerate']) #Points or examinated reion selection
+        #Sigma_coeff = np.float(self.ui.sigma_coeff_value.text()) #coeff for algoritm
+        
+        self.zero_points = np.empty(0)  #points, where current passes through zero
+        
+        for j in np.arange(self.Search_start_points, self.Search_end_points): #checking for current passes through zero
+            if np.sign(self.out['i1'][j-1] * self.out['i1'][j])< 0: 
+                self.zero_points = np.append(self.zero_points, j)
+        zero_points_time = self.zero_points/self.out['samplerate']
+        self.p1.clear()
+        self.p1.plot(self.t, self.out['i1'], pen='b')
+        for n in np.arange(0,len(self.zero_points),1): #select regions for future CUSUM analysis
+            self.control1 = int(self.zero_points[n] -self.Delay_back_trace_points)
+            self.safety_reg = int(self.zero_points[n] -self.Delay_back_trace_points + self.Safety_region_points) 
+            self.control2 =  int(self.zero_points[n])
+            trace = self.out['i1'][self.control1:self.control2]
+            self.p1.plot(self.t[self.control1:self.safety_reg], self.out['i1'][self.control1:self.safety_reg], pen='g')
+            self.p1.plot(self.t[self.safety_reg:self.control2], self.out['i1'][self.safety_reg:self.control2], pen='r')
+        print('Pre ping-pong worked fine')
+
+        '''     
+        l = len(zero_points_time) 
+        IVData={}
+        IVData['Mean'] = np.zeros(l)
+        IVData['STD'] = np.zeros(l)
+
+        table = OrderedDict([('Number', np.zeros(l)), ('Switch (s)', np.zeros(l)),('Start event (s)', np.zeros(l)), ('End event (s)', np.zeros(l)),('Duration (ms)', np.zeros(l)),('Depth (nA)', np.zeros(l))])
+
+
+       
+
+        for (n,k) in enumerate(zero_points):
+
+            trace = self.out['i1'][int(zero_points[n] -2* Delay_back_points):int(zero_points[n])]
+       
+            IVData['Mean'][n] = np.mean(trace[0:int(0.5*Delay_back_points)])
+            IVData['STD'][n] = np.std(trace[0:int(0.5*Delay_back_points)]) 
+            delta = 1e-10
+            h = delta / IVData['STD'][n]
+            
+            j=int(0.5*Delay_back_points)
+
+            while np.abs(trace[j]- IVData['Mean'][n]) < Sigma_coeff * IVData['STD'][n] and j < (len(trace) -1): 
+                IVData['Mean'][n] = np.mean(trace[0:int(j)])
+                IVData['STD'][n] = np.std(trace[0:int(j)])        
+                j+=1
+                if j>  (len(trace) -2): print('Increase sigma coeff')
+
+            table['Start event (s)'][n] = (zero_points[n] -2* Delay_back_points+j)/self.out['samplerate']
+            start_event = j
+
+            IVData['Mean'][n] = np.mean(trace[int(1.5*Delay_back_points):int(2*Delay_back_points)])
+            IVData['STD'][n] = np.std(trace[int(1.5*Delay_back_points):int(2*Delay_back_points)])
+            if n==9:
+                print('Mean='+str(IVData['Mean'][n]))
+                print('STD='+str(IVData['STD'][n]))
+            j = int(1.5*Delay_back_points)
+            while np.abs(trace[j]- IVData['Mean'][n]) < 4.5 * IVData['STD'][n]: 
+                IVData['Mean'][n] = np.mean(trace[int(j):int(2*Delay_back_points)])
+                IVData['STD'][n] = np.std(trace[int(j):int(2*Delay_back_points)])
+                j-=1
+
+            end_event = j
+
+            #table['Number'][n] = n+1
+            #table['End event (s)'][n] = (zero_points[n] -2* Delay_back_points+j)/self.out['samplerate']
+            #table['Duration (ms)'][n] = (table['End event (s)'][n]-table['Start event (s)'][n])*1000
+            #table['Depth (nA)'][n] = IVData['Mean'][n]*1e9  - np.mean(trace[start_event:end_event])*1e9 
+            
+
+        #table['Switch (s)'] = zero_points_time
+        #file = open('results.txt','w') 
+        #file.write(tabulate(table, headers='keys')) 
+        #file.close() 
+        ###########ANALYZE THE EVENT!!!!!##########
+        #backPoint_coef = 15
+        '''
+
+    
+     
+    
+    def pingpong(self):
+        #wb = Workbook()
+        #ws = wb.active
+        wb = load_workbook('sample.xlsx')
+        ws = wb.get_active_sheet()
+        '''
+        ws.cell(row=1,column=1).value = 'Event number'
+        ws.cell(row=1,column=2).value = 'Switch (s)'
+        ws.cell(row=1,column=3).value = 'Start event (s)'
+        ws.cell(row=1,column=4).value = 'End event (s)'
+        ws.cell(row=1,column=5).value = 'Duration (ms)'
+        ws.cell(row=1,column=6).value = 'Depth (nA)'
+        ws.cell(row=1,column=7).value = 'Switch (in front) - End event (ms)'
+        ws.cell(row=1,column=8).value = 'Start event - Switch back (ms)'
+        '''
+        for m in np.arange(2,100,1):
+            for k in np.arange(1,100,1):  
+                ws.cell(row=m,column=k).value = ''
+            
+        for n in np.arange(0,len(self.zero_points),1): 
+            self.control1 = int(self.zero_points[n] -self.Delay_back_trace_points)
+            self.safety_reg = int(self.zero_points[n] -self.Delay_back_trace_points + self.Safety_region_points) 
+            self.control2 =  int(self.zero_points[n])
+            trace = self.out['i1'][self.control1:self.control2]
+            self.var=np.std(trace[:self.safety_reg])
+            self.data = trace
+            cusum_results = self.CUSUM()
+            Event = self.control1  +cusum_results['EventDelay']
+            
+            if len(Event)>2:
+                #####filling exel file with numbers
+                ws.cell(row=n+2,column=1).value = n+1 #event number 
+                ws.cell(row=n+2,column=2).value = "%6.4f"% float(self.zero_points[n] / self.out['samplerate']) #zero points
+                ws.cell(row=n+2,column=3).value = "%6.4f"% float(Event[1] / self.out['samplerate']) #Start event    
+                ws.cell(row=n+2,column=4).value = "%6.4f"% float(Event[-2] / self.out['samplerate']) #End event
+                ws.cell(row=n+2,column=5).value = "%3.2f"% float((Event[-2] - Event[1]) *1e3 / self.out['samplerate']) #Event duration
+                ws.cell(row=n+2,column=6).value = "%3.1f"% float((cusum_results['CurrentLevels'][1] - cusum_results['CurrentLevels'][0]) * 1e9) #Depth
+                ws.cell(row=n+2,column=7).value = "%3.1f"% float((self.zero_points[n] - Event[-2]) * 1e3 /self.out['samplerate'] ) #Switch (in front) - End event (ms)
+                ws.cell(row=n+2,column=8).value = "%6.2f"%  float((Event[1] - self.zero_points[n-1]) * 1e3 /self.out['samplerate'] ) #Start event - Switch back (ms)
+                for interm_event in np.arange(2,len(cusum_results['EventDelay'])-2):
+                    ws.cell(row=1,column=8+interm_event).value = 'Intermediate events'
+                    ws.cell(row=2+n,column=8+interm_event).value = "%6.4f"% float(Event[interm_event]/ self.out['samplerate']) #intermediate events
+
+
+
+            #ws.cell(row=n+2,column=3+len(cusum_results['EventDelay'])).value = (cusum_results['EventDelay'][-1]-cusum_results['EventDelay'][0])/ self.out['samplerate']
+            
+            
+            self.p1.plot(self.t[self.control1:Event[1]], np.repeat(np.array([cusum_results['CurrentLevels'][0]]), len(self.t[self.control1:Event[1]])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+            for number_cusum in np.arange(1,len(Event)-1 ,1): 
+                self.p1.plot(self.t[Event[number_cusum]:Event[number_cusum+1]], np.repeat(np.array([cusum_results['CurrentLevels'][number_cusum]]), len(self.t[Event[number_cusum]:Event[number_cusum+1]])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+                self.p1.plot(np.linspace(self.t[Event[number_cusum]],self.t[Event[number_cusum]] + 0.00001 ,100),np.linspace(cusum_results['CurrentLevels'][number_cusum-1],cusum_results['CurrentLevels'][number_cusum],100), pen=pg.mkPen(color=(173, 27, 183), width=3))
+            self.p1.plot(self.t[Event[-2]:self.control2], np.repeat(np.array([cusum_results['CurrentLevels'][-1]]), len(self.t[Event[-2]:self.control2])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+            self.p1.autoRange()
+            
+        wb.save("sample.xlsx")        
+            #####write to Exel########
+            #wb = Workbook() # create exel File
+            
+
+            #self.p1.plot(self.t[self.control1:self.safety_reg], self.out['i1'][self.control1:self.safety_reg], pen='g')
+            #self.p1.plot(self.t[self.safety_reg:self.control2], self.out['i1'][self.safety_reg:self.control2], pen='r')
+        #self.ui.plot_pingpong.plot(np.linspace(self.safety_reg ,self.safety_reg + 0.00001, 400),np.linspace(trace[0]-3e-9,trace[0]+3e-9,400), color='red', width = 40)
+        #self.ui.plot_pingpong.plot(self.t[self.control1:self.control2], trace , pen='b')
+        
+        #self.var=np.std(trace[:self.safety_reg])
+        #self.ui.plot_pingpong.plot(self.t[self.control1:self.control2], self.out['i1'][self.control1:self.control2] , pen='b')
+        #self.data = trace
+        #cusum_results = self.CUSUM()
+        #Event = self.control1  +cusum_results['EventDelay']      
+        print('Ping-pong worked fine')
+      
+        
+        
+    def CUSUM(self):
+        #self.p1.clear()
+        #self.p1.setDownsampling(ds = False)
+        min_duration_points = int(np.float64(self.ui.min_duration.text()) * 1e-3 * self.outputsamplerate)
+        cusum = detect_cusum(self, self.data,  dt = 1/self.outputsamplerate, threshhold  = np.float64(self.ui.levelthresholdentry.text()) * 1e-9, minlength = min_duration_points, maxstates = 10)
+        print('everythink ok')
+        return cusum
+
+    def inspectevent_pingpong(self):    ######Individual inspection of the event
+
+        
+        n = np.int(self.ui.pingpong_event_number.text()) -1
+        '''
+        ######printing event info##########print("%10.7f"% float(startpoints[j]/self.out['samplerate']))
+        self.ui.starteventtext.setText('Start event (s): ' + str("%6.4f"% float(self.table_info['Start event (s)'][eventnumber])))
+        self.ui.endeventtext.setText('END event(s): ' + str("%6.4f"% float(self.table_info['End event (s)'][eventnumber])))
+        self.ui.switchtext.setText('Switch (s): ' + str("%6.4f"% float(self.table_info['Switch (s)'][eventnumber])))
+        self.ui.switchend.setText('Switch (in front)-End event (ms): ' + str("%3.1f"% float( (self.table_info['Switch (s)'][eventnumber]-self.table_info['End event (s)'][eventnumber]) * 1e3 )))
+        self.ui.startswitch.setText('Start event - Switch (back) (ms): ' + str("%3.0f"% float((self.table_info['Start event (s)'][eventnumber]-self.table_info['Switch (s)'][eventnumber-1]) * 1e3) ))
+        self.ui.durationtext.setText('Duration (ms): ' + str("%3.2f"% float((self.table_info['End event (s)'][eventnumber]-self.table_info['Start event (s)'][eventnumber]) * 1e3) ))
+        
+        self.ui.depthtext.setText('Depth (nA):: ' + str("%4.2f"% float(self.table_info['Depth (nA)'][eventnumber])))
+        eventbuffer = 150
+        self.ui.plot_pingpong.setLabel('bottom', text='Time', units='s')
+        self.ui.plot_pingpong.setLabel('left', text='Current', units='A')
+        self.ui.plot_pingpong.clear()
+        self.ui.plot_pingpong.plot(self.t[int(self.startpoints[eventnumber] - eventbuffer):int(self.endpoints[eventnumber] + eventbuffer)], self.out['i1'][int(self.startpoints[eventnumber] - eventbuffer):int(self.endpoints[eventnumber] + eventbuffer)] , pen='b')
+
+        self.ui.plot_pingpong.plot(self.t[int(self.startpoints[eventnumber] - eventbuffer):int(self.endpoints[eventnumber] + eventbuffer)], np.concatenate((np.repeat(np.array([self.localBaseline[eventnumber]]), eventbuffer), np.repeat(np.array([self.localBaseline[eventnumber] - self.depth[eventnumber]]), self.endpoints[eventnumber] - self.startpoints[eventnumber]), np.repeat(np.array([self.localBaseline[eventnumber]]), eventbuffer)), 0), pen=pg.mkPen(color=(173, 27, 183), width=3))
+        self.ui.plot_pingpong.autoRange()
+        '''
+        self.ui.plot_pingpong.clear()
+        Delay_back = np.float(0.1)  #Seconds how far event should be from switch
+        Delay_back_points = int(Delay_back * self.out['samplerate']) #Points how far event should be from switch
+        self.control1 = int(self.zero_points[n] -Delay_back_points)
+        self.control2 =  int(self.zero_points[n])
+        trace = self.out['i1'][self.control1:self.control2]
+        self.var=np.std(trace[:1000])
+        self.ui.plot_pingpong.plot(self.t[self.control1:self.control2], self.out['i1'][self.control1:self.control2] , pen='b')
+        self.data = trace
+        cusum_results = self.CUSUM()
+        mask = np.ones(len(cusum_results['EventDelay']), dtype = bool)
+        mask[[0,-1]]= False #cut off 0 and last elements
+        Event = self.control1  +cusum_results['EventDelay']
+        #print('Masked='+str(Event))
+        #Level = cusum_results['CurrentLevels'][0]
+        #self.ui.plot_pingpong.plot(np.linspace(Event1,Event1 + 0.00001 ,100),np.linspace(Level-3e-9,Level+3e-9,100), color='green')
+        #self.ui.plot_pingpong.plot(np.linspace(Event2,Event2 + 0.00001 ,100),np.linspace(Level-3e-9,Level+3e-9,100), color='green')
+        #self.ui.plot_pingpong.plot(np.linspace(Event3,Event3 + 0.00001 ,100),np.linspace(Level-3e-9,Level+3e-9,100), color='green')
+
+        #self.ui.plot_pingpong.clear()
+ 
+
+        self.ui.plot_pingpong.plot(self.t[self.control1:Event[1]], np.repeat(np.array([cusum_results['CurrentLevels'][0]]), len(self.t[self.control1:Event[1]])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+        for number_cusum in np.arange(1,len(Event)-1 ,1): 
+            self.ui.plot_pingpong.plot(self.t[Event[number_cusum]:Event[number_cusum+1]], np.repeat(np.array([cusum_results['CurrentLevels'][number_cusum]]), len(self.t[Event[number_cusum]:Event[number_cusum+1]])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+            self.ui.plot_pingpong.plot(np.linspace(self.t[Event[number_cusum]],self.t[Event[number_cusum]] + 0.00001 ,100),np.linspace(cusum_results['CurrentLevels'][number_cusum-1],cusum_results['CurrentLevels'][number_cusum],100), pen=pg.mkPen(color=(173, 27, 183), width=3))
+        self.ui.plot_pingpong.plot(self.t[Event[-2]:self.control2], np.repeat(np.array([cusum_results['CurrentLevels'][-1]]), len(self.t[Event[-2]:self.control2])), pen=pg.mkPen(color=(173, 27, 183), width=3))
+        self.ui.plot_pingpong.autoRange()
+
+    def previousevent_pingpong(self):
+        self.ui.pingpong_event_number.setText(str(np.int(self.ui.pingpong_event_number.text())-1))
+        if np.int(self.ui.pingpong_event_number.text()) < 1: self.ui.pingpong_event_number.setText('1')
+        self.inspectevent_pingpong()
+    def nextevent_pingpong(self):
+        self.ui.pingpong_event_number.setText(str(np.int(self.ui.pingpong_event_number.text())+1))
+        self.inspectevent_pingpong()
+
 
     def SaveIVData(self):
         uf.ExportIVData(self)
@@ -881,42 +1137,7 @@ class GUIForm(QtGui.QMainWindow):
         self.tcat=self.tcat/self.outputsamplerate
         self.catfits.astype('d').tofile(self.matfilename+'_cattrace.bin')
 
-    def CUSUM(self):
-        self.p1.clear()
-        self.p1.setDownsampling(ds = False)
-        cusum = detect_cusum(self.data, basesd = self.var, dt = 1/self.outputsamplerate, 
-                             threshhold  = np.float64(self.ui.thresholdentry.text()),
-                             stepsize = np.float64(self.ui.levelthresholdentry.text()), 
-                             minlength = 10)
-        np.savetxt(self.matfilename+'_Levels.txt', np.abs(cusum['jumps']*10**12),delimiter='\t')
-
-        self.p1.plot(self.t[2:][:-2],self.data[2:][:-2],pen='b')
-
-        self.w3.clear()
-        amp = np.abs(cusum['jumps']*10**12)
-        ampy, ampx = np.histogram(amp, bins=np.linspace(float(self.ui.delirange0.text()), float(self.ui.delirange1.text()), int(self.ui.delibins.text())))
-        hist = pg.BarGraphItem(height = ampy, x0 = ampx[:-1], x1 = ampx[1:], brush = 'b')
-        self.w3.addItem(hist)
-#        self.w3.autoRange()
-        self.w3.setRange(xRange = [np.min(ampx),np.max(ampx)])
-
-        cusumlines = np.array([]).reshape(0,2)
-        for i,level in enumerate(cusum['CurrentLevels']):
-            y = 2*[level]
-            x = cusum['EventDelay'][i:i+2]
-            self.p1.plot(y = y, x = x, pen = 'r')
-            cusumlines = np.concatenate((cusumlines,np.array(zip(x,y))))
-            try:
-                y = cusum['CurrentLevels'][i:i+2]
-                x = 2*[cusum['EventDelay'][i+1]]
-                self.p1.plot(y = y, x = x, pen = 'r')
-                cusumlines = np.concatenate((cusumlines,np.array(zip(x,y))))
-            except Exception:
-                pass
-            
-        cusumlines.astype('d').tofile(self.matfilename+'_cusum.bin')
-        self.savetrace()
-
+   
     def savetarget(self):
         self.batchinfo = self.batchinfo.append(pd.DataFrame({'deli':self.deli,
                     'frac':self.frac,'dwell':self.dwell,'dt':self.dt, 
@@ -999,14 +1220,14 @@ class GUIForm(QtGui.QMainWindow):
                         eventdata = self.data[startpoints[i]-eventbuffer:endpoints[i]+eventbuffer]
                         eventtime = np.arange(0,len(eventdata)) + .75*eventbuffer + eventtime[-1]
                         self.p1.plot(eventtime/self.outputsamplerate, eventdata,pen='b')
-                        cusum = detect_cusum(eventdata, basesd = np.std(eventdata[0:eventbuffer])
+                        cusum = detect_cusum(self, eventdata, basesd = np.std(eventdata[0:eventbuffer])
                             , dt = 1/self.outputsamplerate, threshhold  = cusumthresh
                             , stepsize = cusumstep, minlength = self.minlevelt*self.outputsamplerate, maxstates = 10)
                         
                         while len(cusum['CurrentLevels']) < 3:
                             cusumthresh = cusumthresh *.9
                             cusumstep = cusumstep * .9
-                            cusum = detect_cusum(eventdata, basesd = np.std(eventdata[0:eventbuffer])
+                            cusum = detect_cusum(self, eventdata, basesd = np.std(eventdata[0:eventbuffer])
                                 , dt = 1/self.outputsamplerate, threshhold  = cusumthresh
                                 , stepsize = cusumstep, minlength = self.minlevelt*self.outputsamplerate, maxstates = 10)
                       
@@ -1014,7 +1235,7 @@ class GUIForm(QtGui.QMainWindow):
 
                         
 #                        if np.max(cusum['CurrentLevels'])-np.min(cusum['CurrentLevels']) == 0:
-#                            cusum = detect_cusum(eventdata, basesd = np.std(eventdata)
+#                            cusum = detect_cusum(self, eventdata, basesd = np.std(eventdata)
 #                                , dt = 1/self.outputsamplerate, threshhold  = cusumthresh/10
 #                                , stepsize = cusumstep/10, minlength = self.minlevelt*self.outputsamplerate)
                             
@@ -1035,10 +1256,8 @@ class GUIForm(QtGui.QMainWindow):
         
         print('\007')
         
-    def IVAxis(self):
-        self.xaxisIV = self.ui.IVxaxis.currentIndex()
-        self.yaxisIV = self.ui.IVyaxis.currentIndex()
-
+    
+        
     def sizethepore(self):
         self.ps = PoreSizer()
         self.ps.show()
