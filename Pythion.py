@@ -475,8 +475,7 @@ class GUIForm(QtGui.QMainWindow):
         self.Search_end = np.float(self.ui.End_search_value.text()) #seconds from the beginning of the experiment
         self.Search_start_points = int(self.Search_start * self.out['samplerate']) #Points from the beginning of the experiment
         self.Search_end_points = int(self.Search_end * self.out['samplerate']) #Points from the beginning of the experiment
-        self.Delay_back = np.float(self.ui.Delay_back_value.text()) * 1e-3 #mSeconds how far event should be from switch
-        self.Delay_back_points = int(self.Delay_back * self.out['samplerate']) #Points how far event should be from switch
+       
         self.Delay_back_trace = np.float(self.ui.Delay_back_trace.text()) * 1e-3 #mSeconds for examinated reion selection
         self.Delay_back_trace_points = int(self.Delay_back_trace * self.out['samplerate']) #Points or examinated reion selection
         self.Safety_region = np.float(self.ui.Safety_region.text()) * 1e-3 #mSeconds for examinated reion selection
